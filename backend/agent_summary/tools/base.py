@@ -87,6 +87,6 @@ async def invoke_tool_with_retry(tool: Tool, **kwargs) -> Any:
         except asyncio.TimeoutError:
             if attempt == tool.max_retries - 1:
                 raise
-        except Exception as e:
+        except Exception:
             if attempt == tool.max_retries - 1:
                 raise
