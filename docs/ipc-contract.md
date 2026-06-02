@@ -33,7 +33,19 @@ Owners populate this table as endpoints land. Format: `METHOD path → response`
 
 | Method | Path | Body | Response | Notes |
 |---|---|---|---|---|
-| (planned) | `/feeds/*` | | | see `backend/feed_engine/AGENT.md` |
+| GET | `/feeds` | - | `Feed[]` | optional `?q=` search |
+| POST | `/feeds` | `{ url: string, sync?: boolean }` | `Feed` | subscribe by URL; `sync` defaults to `true` |
+| DELETE | `/feeds/{feed_id}` | - | `{ deleted: true }` | removes subscription through storage API |
+| POST | `/feeds/parse` | `{ url: string }` | `ParsedFeed` | fetches and parses without saving |
+| POST | `/feeds/validate` | raw RSS/Atom XML | `FeedValidationResult` | validates uploaded XML body |
+| POST | `/feeds/{feed_id}/sync` | - | `SyncResult` | fetches feed URL and persists entries |
+| POST | `/feeds/sync-all` | - | `SyncResult[]` | syncs all subscribed feeds |
+| POST | `/feeds/opml/import` | raw OPML XML or multipart file | `OPMLImportResult` | imports nested OPML outlines |
+| GET | `/feeds/opml/export` | - | OPML XML file | downloads `mercury-subscriptions.opml` |
+
+Feed module-specific response models (`ParsedFeed`, `FeedValidationResult`, `SyncResult`,
+`OPMLImportResult`) are defined in `backend/feed_engine/types.py`.
+
 
 ### Content (member 4)
 

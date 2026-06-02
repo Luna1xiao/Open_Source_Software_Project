@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>Mercury Feeds</title>
+  </head>
+  <body>
+    <outline text="Tech">
+      <outline
+        type="rss"
+        text="Mercury Blog"
+        title="Mercury Blog"
+        xmlUrl="https://example.com/rss.xml"
+        htmlUrl="https://example.com" />
+      <outline text="Nested">
+        <outline
+          type="rss"
+          text="Atom Feed"
+          xmlUrl="https://example.com/atom.xml"
+          htmlUrl="https://example.com/atom" />
+      </outline>
+    </outline>
+  </body>
+</opml>
+

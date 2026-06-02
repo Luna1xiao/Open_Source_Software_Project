@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Mercury Blog</title>
+    <link>https://example.com</link>
+    <description>Local-first RSS notes</description>
+    <item>
+      <title>First Article</title>
+      <link>https://example.com/articles/1</link>
+      <guid>article-001</guid>
+      <pubDate>Mon, 25 May 2026 10:00:00 GMT</pubDate>
+      <description>Parsed from RSS</description>
+      <author>Mercury Team</author>
+    </item>
+  </channel>
+</rss>
+

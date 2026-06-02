@@ -34,3 +34,6 @@ select = ["E", "F", "I", "W", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests", "agent_summary/tests"]
 pythonpath = ["."]
+markers = [
+    "network: tests that call live internet feed sources",
+]

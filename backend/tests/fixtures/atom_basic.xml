@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Mercury Atom</title>
+  <link href="https://example.com" rel="alternate" />
+  <entry>
+    <id>tag:example.com,2026:entry-1</id>
+    <title>Atom Article</title>
+    <link href="https://example.com/atom/1" rel="alternate" />
+    <updated>2026-05-25T11:30:00Z</updated>
+    <summary>Parsed from Atom</summary>
+    <author>
+      <name>Atom Author</name>
+    </author>
+  </entry>
+</feed>
+
