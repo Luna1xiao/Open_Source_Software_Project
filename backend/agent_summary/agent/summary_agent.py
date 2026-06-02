@@ -1,9 +1,8 @@
 """SummaryAgent 核心实现"""
 
 import re
-from urllib.parse import urlparse
-
 from time import time
+from urllib.parse import urlparse
 
 from ..core.hooks import HookRegistry
 from ..core.router import Router
@@ -25,7 +24,11 @@ class MockLLM:
         if not content:
             return "This article does not contain enough readable content to summarize."
 
-        sentences = [segment.strip() for segment in re.split(r"(?<=[。！？.!?])\s+", content) if segment.strip()]
+        sentences = [
+            segment.strip()
+            for segment in re.split(r"(?<=[。！？.!?])\s+", content)
+            if segment.strip()
+        ]
         if not sentences:
             return _truncate(content, 180)
 
@@ -43,7 +46,11 @@ class SummaryAgent:
         # 默认使用真实 LLM，测试时可传入 use_mock=True
         if llm_provider:
             self.llm = llm_provider
-            self.provider_name = getattr(llm_provider, "provider_name", _provider_name_from_base_url(getattr(llm_provider, "base_url", "")))
+            self.provider_name = getattr(
+                llm_provider,
+                "provider_name",
+                _provider_name_from_base_url(getattr(llm_provider, "base_url", "")),
+            )
             self.model_name = getattr(llm_provider, "model", "custom")
         elif use_mock:
             self.llm = MockLLM()

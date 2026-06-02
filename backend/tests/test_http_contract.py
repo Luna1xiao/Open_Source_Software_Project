@@ -178,7 +178,11 @@ def test_generate_summary_persists_the_summary_result(api_client: TestClient, mo
                 "model": "mock-model",
             }
 
-    monkeypatch.setattr(summary_router, "get_summary_service", lambda: SummaryService(agent_factory=FakeAgent))
+    monkeypatch.setattr(
+        summary_router,
+        "get_summary_service",
+        lambda: SummaryService(agent_factory=FakeAgent),
+    )
 
     response = api_client.post("/agents/summary/generate", json={"entry_id": "article-1"})
 
@@ -204,7 +208,11 @@ def test_generate_summary_returns_500_for_internal_errors(api_db: str, monkeypat
         async def summarize(self, entry_id: str, content: str) -> dict:
             raise RuntimeError("boom")
 
-    monkeypatch.setattr(summary_router, "get_summary_service", lambda: SummaryService(agent_factory=FailingAgent))
+    monkeypatch.setattr(
+        summary_router,
+        "get_summary_service",
+        lambda: SummaryService(agent_factory=FailingAgent),
+    )
 
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.post("/agents/summary/generate", json={"entry_id": "article-1"})
@@ -219,9 +227,16 @@ def test_generate_summary_surfaces_upstream_llm_errors(api_db: str, monkeypatch)
 
     class UnauthorizedAgent:
         async def summarize(self, entry_id: str, content: str) -> dict:
-            raise LLMClientError("LLM provider rejected the request: 无效的令牌", status_code=401)
+            raise LLMClientError(
+                "LLM provider rejected the request: 无效的令牌",
+                status_code=401,
+            )
 
-    monkeypatch.setattr(summary_router, "get_summary_service", lambda: SummaryService(agent_factory=UnauthorizedAgent))
+    monkeypatch.setattr(
+        summary_router,
+        "get_summary_service",
+        lambda: SummaryService(agent_factory=UnauthorizedAgent),
+    )
 
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.post("/agents/summary/generate", json={"entry_id": "article-1"})

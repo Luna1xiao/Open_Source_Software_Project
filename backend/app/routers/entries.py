@@ -2,8 +2,20 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.schemas.entry import Entry, EntryDeleteResult, EntryReadStateRequest, EntryStarStateRequest
-from db import delete_article, get_article, list_articles, mark_article_read, mark_article_starred, search_articles
+from app.schemas.entry import (
+    Entry,
+    EntryDeleteResult,
+    EntryReadStateRequest,
+    EntryStarStateRequest,
+)
+from db import (
+    delete_article,
+    get_article,
+    list_articles,
+    mark_article_read,
+    mark_article_starred,
+    search_articles,
+)
 
 router = APIRouter(tags=["entries"])
 

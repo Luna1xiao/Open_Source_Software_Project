@@ -5,6 +5,10 @@ from app.schemas.content import ArticleContent
 from app.schemas.entry import Entry
 from db.connection import connection
 
+READER_HTML_SQL = """
+COALESCE(NULLIF(article_content.cleaned_html, ''), article_content.raw_html, '') AS reader_html
+"""
+
 
 def save_article(entry: Entry, db_path: Path | str | None = None) -> Entry:
     """Upsert one article metadata row and its current reader HTML projection."""
@@ -27,7 +31,7 @@ def get_article(article_id: str, db_path: Path | str | None = None) -> Entry | N
     """Return one article with content, tags, and latest successful agent outputs."""
     with connection(db_path) as conn:
         row = conn.execute(
-            """
+            f"""
             SELECT
                 articles.id,
                 articles.feed_id,
@@ -39,7 +43,7 @@ def get_article(article_id: str, db_path: Path | str | None = None) -> Entry | N
                 articles.is_read,
                 articles.is_starred,
                 articles.note,
-                COALESCE(NULLIF(article_content.cleaned_html, ''), article_content.raw_html, '') AS reader_html,
+                {READER_HTML_SQL},
                 (
                     SELECT GROUP_CONCAT(tag_id)
                     FROM article_tags
@@ -89,7 +93,7 @@ def list_articles(
     db_path: Path | str | None = None,
 ) -> list[Entry]:
     """List articles, optionally filtered by feed or tag, newest first."""
-    sql = """
+    sql = f"""
         SELECT
             articles.id,
             articles.feed_id,
@@ -101,7 +105,7 @@ def list_articles(
             articles.is_read,
             articles.is_starred,
             articles.note,
-            COALESCE(NULLIF(article_content.cleaned_html, ''), article_content.raw_html, '') AS reader_html,
+            {READER_HTML_SQL},
             (
                 SELECT GROUP_CONCAT(tag_id)
                 FROM article_tags
@@ -301,7 +305,7 @@ def search_articles(
     """Search articles by title, summary, or cleaned plain text projection."""
     like_keyword = f"%{keyword}%"
     match_keyword = keyword.replace('"', '""')
-    sql = """
+    sql = f"""
         SELECT DISTINCT
             articles.id,
             articles.feed_id,
@@ -313,7 +317,7 @@ def search_articles(
             articles.is_read,
             articles.is_starred,
             articles.note,
-            COALESCE(NULLIF(article_content.cleaned_html, ''), article_content.raw_html, '') AS reader_html,
+            {READER_HTML_SQL},
             (
                 SELECT GROUP_CONCAT(tag_id)
                 FROM article_tags
@@ -355,7 +359,7 @@ def search_articles(
             rows = conn.execute(sql, (match_keyword, limit, offset)).fetchall()
         except sqlite3.OperationalError:
             rows = conn.execute(
-                """
+                f"""
                 SELECT DISTINCT
                     articles.id,
                     articles.feed_id,
@@ -367,7 +371,7 @@ def search_articles(
                     articles.is_read,
                     articles.is_starred,
                     articles.note,
-                    COALESCE(NULLIF(article_content.cleaned_html, ''), article_content.raw_html, '') AS reader_html,
+                    {READER_HTML_SQL},
                     (
                         SELECT GROUP_CONCAT(tag_id)
                         FROM article_tags

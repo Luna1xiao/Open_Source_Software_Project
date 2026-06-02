@@ -108,16 +108,28 @@ class LLMClient:
         try:
             resp_data = json.loads(raw_body) if raw_body else {}
         except json.JSONDecodeError as exc:
-            raise LLMClientError("LLM provider returned invalid JSON.", status_code=response.status) from exc
+            raise LLMClientError(
+                "LLM provider returned invalid JSON.",
+                status_code=response.status,
+            ) from exc
 
         if response.status >= 400:
-            detail = _extract_error_detail(resp_data) or f"LLM provider request failed ({response.status})."
-            raise LLMClientError(f"LLM provider rejected the request: {detail}", status_code=response.status)
+            detail = (
+                _extract_error_detail(resp_data)
+                or f"LLM provider request failed ({response.status})."
+            )
+            raise LLMClientError(
+                f"LLM provider rejected the request: {detail}",
+                status_code=response.status,
+            )
 
         try:
             text = _extract_message_text(resp_data)
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise LLMClientError("LLM provider returned an unexpected response format.", status_code=response.status) from exc
+            raise LLMClientError(
+                "LLM provider returned an unexpected response format.",
+                status_code=response.status,
+            ) from exc
 
         usage = resp_data.get("usage", {})
 
@@ -153,7 +165,11 @@ def _extract_message_text(payload: dict) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        text_parts = [item.get("text", "") for item in content if isinstance(item, dict) and item.get("type") == "text"]
+        text_parts = [
+            item.get("text", "")
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "text"
+        ]
         joined = "".join(part for part in text_parts if part)
         if joined:
             return joined

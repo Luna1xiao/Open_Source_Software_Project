@@ -6,10 +6,9 @@ import os
 import shutil
 import subprocess
 import time
-import venv
 import tomllib
+import venv
 from pathlib import Path
-
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = BACKEND_DIR / "pyproject.toml"

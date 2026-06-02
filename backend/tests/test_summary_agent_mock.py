@@ -6,7 +6,11 @@ from agent_summary.agent.summary_agent import MockLLM
 
 
 def test_mock_llm_returns_content_based_summary() -> None:
-    prompt = "请用 2-3 句话总结以下内容：\n\nThe colorful I/O logo sits on a stage. It highlights Google's annual developer conference."
+    prompt = (
+        "请用 2-3 句话总结以下内容：\n\n"
+        "The colorful I/O logo sits on a stage. "
+        "It highlights Google's annual developer conference."
+    )
 
     summary = asyncio.run(MockLLM().chat(prompt))
 
