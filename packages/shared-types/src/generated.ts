@@ -141,6 +141,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tags */
+        get: operations["get_tags_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Entries */
+        get: operations["get_entries_entries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/entries/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Entry */
+        get: operations["get_entry_entries__entry_id__get"];
+        put?: never;
+        post?: never;
+        /** Remove Entry */
+        delete: operations["remove_entry_entries__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/entries/{entry_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set Entry Read State */
+        patch: operations["set_entry_read_state_entries__entry_id__read_patch"];
+        trace?: never;
+    };
+    "/entries/{entry_id}/star": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set Entry Star State */
+        patch: operations["set_entry_star_state_entries__entry_id__star_patch"];
+        trace?: never;
+    };
     "/content/clean": {
         parameters: {
             query?: never;
@@ -184,10 +270,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Generate Summary
-         * @description 生成摘要
-         */
+        /** Generate Summary */
         post: operations["generate_summary_agents_summary_generate_post"];
         delete?: never;
         options?: never;
@@ -243,6 +326,63 @@ export interface components {
             word_count: number;
             /** Reading Time Minutes */
             reading_time_minutes: number;
+        };
+        /** Entry */
+        Entry: {
+            /** Id */
+            id: string;
+            /** Feed Id */
+            feed_id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Author */
+            author: string;
+            /** Url */
+            url: string;
+            /** Published At */
+            published_at: string;
+            /** Is Read */
+            is_read: boolean;
+            /** Is Starred */
+            is_starred: boolean;
+            /** Tag Ids */
+            tag_ids: string[];
+            /** Reader Html */
+            reader_html: string;
+            /** Web Preview */
+            web_preview: string;
+            /** Related Entry Ids */
+            related_entry_ids: string[];
+            /** Note */
+            note: string;
+            /** Summary Text */
+            summary_text: string;
+            /** Translation Html */
+            translation_html?: string | null;
+            /**
+             * Translation Status
+             * @enum {string}
+             */
+            translation_status: "idle" | "queued" | "running" | "success" | "failure" | "cancelled";
+        };
+        /** EntryDeleteResult */
+        EntryDeleteResult: {
+            /** Entry Id */
+            entry_id: string;
+            /** Deleted */
+            deleted: boolean;
+        };
+        /** EntryReadStateRequest */
+        EntryReadStateRequest: {
+            /** Is Read */
+            is_read: boolean;
+        };
+        /** EntryStarStateRequest */
+        EntryStarStateRequest: {
+            /** Is Starred */
+            is_starred: boolean;
         };
         /** Feed */
         Feed: {
@@ -368,18 +508,26 @@ export interface components {
         SummaryRequest: {
             /** Entry Id */
             entry_id: string;
-            /**
-             * Target Lang
-             * @default en
-             */
-            target_lang: string;
+            /** Provider */
+            provider?: string | null;
+            /** Model */
+            model?: string | null;
         };
-        /** SummaryResponse */
-        SummaryResponse: {
+        /** SummaryResult */
+        SummaryResult: {
             /** Entry Id */
             entry_id: string;
-            /** Summary */
-            summary: string;
+            /** Summary Text */
+            summary_text: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "queued" | "running" | "success" | "failure" | "cancelled";
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
         };
         /** SyncResult */
         SyncResult: {
@@ -401,6 +549,19 @@ export interface components {
              * @default false
              */
             not_modified: boolean;
+        };
+        /** Tag */
+        Tag: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Aliases */
+            aliases: string[];
+            /** Usage Count */
+            usage_count: number;
+            /** Unread Count */
+            unread_count: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -427,7 +588,7 @@ export interface operations {
     get_feeds_feeds_get: {
         parameters: {
             query?: {
-                q?: string | null;
+                keyword?: string | null;
             };
             header?: never;
             path?: never;
@@ -665,6 +826,203 @@ export interface operations {
             };
         };
     };
+    get_tags_tags_get: {
+        parameters: {
+            query?: {
+                keyword?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tag"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_entries_entries_get: {
+        parameters: {
+            query?: {
+                feed_id?: string | null;
+                keyword?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Entry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_entry_entries__entry_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Entry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_entry_entries__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryDeleteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_entry_read_state_entries__entry_id__read_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryReadStateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Entry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_entry_star_state_entries__entry_id__star_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryStarStateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Entry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     clean_content_content_clean_post: {
         parameters: {
             query?: never;
@@ -748,7 +1106,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SummaryResponse"];
+                    "application/json": components["schemas"]["SummaryResult"];
                 };
             };
             /** @description Validation Error */

@@ -11,10 +11,15 @@
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "baseUrl": ".",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "paths": {
+      "@mercury/ipc-client": ["../ipc-client/src/index.ts"],
+      "@mercury/shared-types": ["../shared-types/src/index.ts"]
+    }
   },
   "include": ["src"]
 }

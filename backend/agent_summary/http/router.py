@@ -1,22 +1,31 @@
-"""HTTP 路由层"""
+"""HTTP routes for summary agent requests."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
-from ..agent.summary_agent import SummaryAgent
+from app.schemas.agent import SummaryRequest, SummaryResult
+
+from ..llm_client import LLMClientError
+from ..service import (
+    ArticleContentUnavailableError,
+    ArticleNotFoundError,
+    SummaryService,
+)
 
 router = APIRouter(prefix="/agents/summary", tags=["agent-summary"])
 
 
-@router.post("/")
-async def summarize(entry_id: str, content: str):
-    """摘要单条文章"""
-    agent = SummaryAgent()
-    result = await agent.summarize(entry_id, content)
-    return result
+def get_summary_service() -> SummaryService:
+    return SummaryService()
 
 
-@router.get("/{entry_id}")
-async def get_cached(entry_id: str):
-    """获取缓存的摘要"""
-    # TODO: 实现缓存查询
-    return {"entry_id": entry_id, "summary_text": "", "status": "not_found"}
+@router.post("/generate", response_model=SummaryResult)
+async def generate_summary(request: SummaryRequest) -> SummaryResult:
+    service = get_summary_service()
+    try:
+        return await service.generate(request)
+    except ArticleNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Entry not found") from exc
+    except ArticleContentUnavailableError as exc:
+        raise HTTPException(status_code=409, detail="Entry has no summary content") from exc
+    except LLMClientError as exc:
+        raise HTTPException(status_code=502, detail=exc.detail) from exc

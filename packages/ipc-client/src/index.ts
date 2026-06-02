@@ -18,7 +18,12 @@ export interface IpcClient {
   request<TResponse, TBody = unknown>(
     method: string,
     path: string,
-    init?: { body?: TBody; query?: Record<string, string | number | boolean | undefined> },
+    init?: {
+      body?: TBody;
+      query?: Record<string, string | number | boolean | undefined>;
+      headers?: HeadersInit;
+      bodyType?: "json" | "raw";
+    },
   ): Promise<TResponse>;
 }
 
@@ -31,7 +36,12 @@ export function createClient(options: ClientOptions): IpcClient {
     async request<TResponse, TBody = unknown>(
       method: string,
       path: string,
-      init?: { body?: TBody; query?: Record<string, string | number | boolean | undefined> },
+      init?: {
+        body?: TBody;
+        query?: Record<string, string | number | boolean | undefined>;
+        headers?: HeadersInit;
+        bodyType?: "json" | "raw";
+      },
     ): Promise<TResponse> {
       const url = new URL(baseUrl + path);
       if (init?.query) {
@@ -41,10 +51,17 @@ export function createClient(options: ClientOptions): IpcClient {
       }
 
       const headers = new Headers(baseHeaders);
+      if (init?.headers) {
+        new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+      }
       let body: BodyInit | undefined;
       if (init?.body !== undefined) {
-        headers.set("content-type", "application/json");
-        body = JSON.stringify(init.body);
+        if (init.bodyType === "raw") {
+          body = init.body as BodyInit;
+        } else {
+          headers.set("content-type", "application/json");
+          body = JSON.stringify(init.body);
+        }
       }
 
       const response = await fetchImpl(url.toString(), { method, headers, body });
@@ -58,3 +75,9 @@ export function createClient(options: ClientOptions): IpcClient {
     },
   };
 }
+
+export * from "./entries";
+export * from "./feeds";
+export * from "./content";
+export * from "./summary";
+export * from "./tags";

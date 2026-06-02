@@ -27,17 +27,22 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { composeDigest } from "./domain/digest";
-import { digestTemplates, entries as fixtureEntries, feeds, tags as fixtureTags, usageReports } from "./domain/fixtures";
+import { digestTemplates, usageReports } from "./domain/fixtures";
 import {
   filterEntries,
   nextSelectedEntryId,
-  queryScopedReadState,
   scopeTitle,
   visiblePage
 } from "./domain/selectors";
+import { useAppData } from "./hooks/useAppData";
+import { useEntryActions } from "./hooks/useEntryActions";
+import { useEntryCleaner } from "./hooks/useEntryCleaner";
+import { useFeedActions } from "./hooks/useFeedActions";
+import { useSummaryAction } from "./hooks/useSummaryAction";
 import type {
   AppState,
   Entry,
+  Feed,
   FeedScope,
   LocaleCode,
   ModalState,
@@ -57,6 +62,7 @@ const summaryExpandedKey = "ui.summaryExpanded";
 const summaryHeightKey = "ui.summaryHeight";
 
 type DataState = {
+  feeds: Feed[];
   entries: Entry[];
   tags: Tag[];
 };
@@ -97,7 +103,7 @@ const initialState: AppState = {
   searchText: "",
   searchScope: "allFeeds",
   unreadOnly: false,
-  selectedEntryId: fixtureEntries[0]?.id ?? null,
+  selectedEntryId: null,
   readerMode: "reader",
   activePanel: null,
   summaryExpanded: readStoredBoolean(summaryExpandedKey, true),
@@ -244,10 +250,25 @@ function reducer(state: AppState, action: Action): AppState {
 
 export function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const [data, setData] = useState<DataState>({ entries: fixtureEntries, tags: fixtureTags });
+  const { data, error, isLoading, reload, setData, updateEntry, refreshEntry } = useAppData();
+  const [entryActionError, setEntryActionError] = useState<string | null>(null);
+  const {
+    status: feedActionStatus,
+    errorMessage: feedActionError,
+    notice: feedActionNotice,
+    addFeed,
+    importFeedsFromOpml,
+    syncAll,
+    clearMessages: clearFeedActionMessages
+  } = useFeedActions(reload);
+  const { ensureCleaned } = useEntryCleaner(refreshEntry);
+  const { status: summaryStatus, errorMessage: summaryError, runSummary, clearError: clearSummaryError } = useSummaryAction(refreshEntry);
+  const { setReadState, setReadStateForEntries, toggleStar, deleteOne } = useEntryActions(setData, reload);
   const [sidebarWidth, setSidebarWidth] = useState(() => readStoredNumber(sidebarWidthKey, 252));
   const [listWidth, setListWidth] = useState(() => readStoredNumber(listWidthKey, 360));
   const searchRef = useRef<HTMLInputElement>(null);
+  const autoMarkReadTimerRef = useRef<number | null>(null);
+  const suppressAutoMarkReadEntryIdRef = useRef<string | null>(null);
 
   const t = (key: string, values?: Record<string, string | number>) => translate(state.locale, key, values);
   const query = useMemo(
@@ -281,6 +302,52 @@ export function App() {
   }, [filteredEntries, state.selectedEntryId]);
 
   useEffect(() => {
+    clearSummaryError();
+  }, [clearSummaryError, state.selectedEntryId]);
+
+  useEffect(() => {
+    if (autoMarkReadTimerRef.current !== null) {
+      window.clearTimeout(autoMarkReadTimerRef.current);
+      autoMarkReadTimerRef.current = null;
+    }
+
+    if (!selectedEntry) {
+      return;
+    }
+    if (suppressAutoMarkReadEntryIdRef.current && suppressAutoMarkReadEntryIdRef.current !== selectedEntry.id) {
+      suppressAutoMarkReadEntryIdRef.current = null;
+    }
+    if (selectedEntry.isRead || suppressAutoMarkReadEntryIdRef.current === selectedEntry.id) {
+      return;
+    }
+
+    autoMarkReadTimerRef.current = window.setTimeout(() => {
+      void setReadState(selectedEntry, true).catch((loadError: Error) => {
+        setEntryActionError(loadError.message);
+      });
+    }, 3000);
+
+    return () => {
+      if (autoMarkReadTimerRef.current !== null) {
+        window.clearTimeout(autoMarkReadTimerRef.current);
+        autoMarkReadTimerRef.current = null;
+      }
+    };
+  }, [selectedEntry, setReadState]);
+
+  useEffect(() => {
+    const shellState: SurfaceState = isLoading ? "loading" : error ? "error" : "ready";
+    const feedState: SurfaceState = isLoading ? "loading" : error ? "error" : data.feeds.length === 0 ? "empty" : "ready";
+    const tagState: SurfaceState = isLoading ? "loading" : error ? "error" : data.tags.length === 0 ? "empty" : "ready";
+    const entryState: SurfaceState = isLoading ? "loading" : error ? "error" : data.entries.length === 0 ? "empty" : "ready";
+
+    dispatch({ type: "setSurfaceState", surface: "shell", state: shellState });
+    dispatch({ type: "setSurfaceState", surface: "feed", state: feedState });
+    dispatch({ type: "setSurfaceState", surface: "tag", state: tagState });
+    dispatch({ type: "setSurfaceState", surface: "entry", state: entryState });
+  }, [data.entries.length, data.feeds.length, data.tags.length, error, isLoading]);
+
+  useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -312,15 +379,63 @@ export function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [page.items, state.activePanel, state.modal.type, state.selectedEntryId]);
 
-  function updateEntry(entryId: string, transform: (entry: Entry) => Entry) {
-    setData((current) => ({
-      ...current,
-      entries: current.entries.map((entry) => (entry.id === entryId ? transform(entry) : entry))
-    }));
+  async function markSelectedEntry(isRead: boolean) {
+    if (!selectedEntry) {
+      return;
+    }
+    suppressAutoMarkReadEntryIdRef.current = isRead ? null : selectedEntry.id;
+    try {
+      await setReadState(selectedEntry, isRead);
+      setEntryActionError(null);
+    } catch (loadError) {
+      setEntryActionError(loadError instanceof Error ? loadError.message : t("requestFailed"));
+    }
   }
 
-  function markQuery(isRead: boolean) {
-    setData((current) => ({ ...current, entries: queryScopedReadState(current.entries, query, isRead) }));
+  async function markAllFilteredEntries(isRead: boolean) {
+    try {
+      await setReadStateForEntries(filteredEntries, isRead);
+      setEntryActionError(null);
+    } catch (loadError) {
+      setEntryActionError(loadError instanceof Error ? loadError.message : t("requestFailed"));
+    }
+  }
+
+  async function toggleEntryStar(entryId: string) {
+    const entry = data.entries.find((candidate) => candidate.id === entryId);
+    if (!entry) {
+      return;
+    }
+
+    try {
+      await toggleStar(entry);
+      setEntryActionError(null);
+    } catch (loadError) {
+      setEntryActionError(loadError instanceof Error ? loadError.message : t("requestFailed"));
+    }
+  }
+
+  async function deleteSelectedEntry() {
+    if (!selectedEntry) {
+      return;
+    }
+
+    const selectedIndex = filteredEntries.findIndex((entry) => entry.id === selectedEntry.id);
+    const fallbackEntryId =
+      filteredEntries[selectedIndex + 1]?.id ?? filteredEntries[selectedIndex - 1]?.id ?? null;
+
+    try {
+      await deleteOne(selectedEntry.id);
+      dispatch({ type: "selectEntry", entryId: fallbackEntryId });
+      setEntryActionError(null);
+    } catch (loadError) {
+      setEntryActionError(loadError instanceof Error ? loadError.message : t("requestFailed"));
+    }
+  }
+
+  function clearStatusMessages() {
+    clearFeedActionMessages();
+    setEntryActionError(null);
   }
 
   function openMultipleDigestExport() {
@@ -373,11 +488,21 @@ export function App() {
         onReports={() => dispatch({ type: "setModal", modal: { type: "usageReport" } })}
       />
 
+      {(feedActionNotice || feedActionError || entryActionError) && (
+        <div className="status-note">
+          <span>{entryActionError ?? feedActionError ?? feedActionNotice}</span>
+          <button type="button" onClick={clearStatusMessages}>
+            <X size={14} aria-hidden />
+          </button>
+        </div>
+      )}
+
       <main className="reader-workspace" aria-busy={state.shellLoadState === "loading"}>
         <aside className="pane sidebar-pane" style={{ width: sidebarWidth }}>
           <Sidebar
             t={t}
-            feeds={feeds}
+            feeds={data.feeds}
+            entries={data.entries}
             tags={data.tags}
             state={state}
             onSection={(section) => dispatch({ type: "setSidebarSection", section })}
@@ -386,7 +511,7 @@ export function App() {
             onClearTags={() => dispatch({ type: "clearTags" })}
             onTagMatchMode={(mode) => dispatch({ type: "setTagMatchMode", mode })}
             onModal={(modal) => dispatch({ type: "setModal", modal })}
-            onSurfaceState={(surface, surfaceState) => dispatch({ type: "setSurfaceState", surface, state: surfaceState })}
+            onSync={syncAll}
           />
         </aside>
         <div
@@ -398,7 +523,7 @@ export function App() {
         <section className="pane entry-pane" style={{ width: listWidth }}>
           <EntryList
             t={t}
-            feeds={feeds}
+            feeds={data.feeds}
             state={state}
             entries={page.items}
             selectedEntry={selectedEntry}
@@ -407,14 +532,12 @@ export function App() {
             onUnreadOnly={(unreadOnly) => dispatch({ type: "setUnreadOnly", unreadOnly })}
             onSelect={(entryId) => dispatch({ type: "selectEntry", entryId })}
             onLoadMore={() => dispatch({ type: "loadMore" })}
-            onMarkQuery={markQuery}
-            onToggleStar={(entryId) => updateEntry(entryId, (entry) => ({ ...entry, isStarred: !entry.isStarred }))}
-            onDelete={() => {
-              if (!selectedEntry) {
-                return;
-              }
-              setData((current) => ({ ...current, entries: current.entries.filter((entry) => entry.id !== selectedEntry.id) }));
-            }}
+            onMarkSelectedRead={() => void markSelectedEntry(true)}
+            onMarkSelectedUnread={() => void markSelectedEntry(false)}
+            onMarkAllRead={() => void markAllFilteredEntries(true)}
+            onMarkAllUnread={() => void markAllFilteredEntries(false)}
+            onToggleStar={(entryId) => void toggleEntryStar(entryId)}
+            onDeleteSelected={() => void deleteSelectedEntry()}
             onMultipleMode={(enabled) => dispatch({ type: "setMultipleDigestMode", enabled })}
             onToggleMultiple={(entryId) => dispatch({ type: "toggleMultipleDigestEntry", entryId })}
             onConfirmMultiple={openMultipleDigestExport}
@@ -443,6 +566,11 @@ export function App() {
             onRelatedExpanded={(expanded) => dispatch({ type: "setRelatedExpanded", expanded })}
             onNotice={(notice) => dispatch({ type: "setTranslationNotice", notice })}
             onModal={(modal) => dispatch({ type: "setModal", modal })}
+            onRunSummary={runSummary}
+            onEnsureEntryContent={ensureCleaned}
+            summaryStatus={summaryStatus}
+            summaryError={summaryError}
+            onClearSummaryError={clearSummaryError}
           />
         </section>
       </main>
@@ -460,6 +588,10 @@ export function App() {
         onModal={(modal) => dispatch({ type: "setModal", modal })}
         onBatchNotice={(notice) => dispatch({ type: "setBatchNotice", notice })}
         onSetTags={(tags) => setData((current) => ({ ...current, tags }))}
+        feedActionStatus={feedActionStatus}
+        feedActionError={feedActionError}
+        onAddFeed={addFeed}
+        onImportOpml={importFeedsFromOpml}
       />
     </div>
   );
@@ -527,7 +659,8 @@ function TopToolbar(props: {
 
 function Sidebar(props: {
   t: (key: string, values?: Record<string, string | number>) => string;
-  feeds: typeof feeds;
+  feeds: Feed[];
+  entries: Entry[];
   tags: Tag[];
   state: AppState;
   onSection: (section: SidebarSection) => void;
@@ -536,7 +669,7 @@ function Sidebar(props: {
   onClearTags: () => void;
   onTagMatchMode: (mode: AppState["tagMatchMode"]) => void;
   onModal: (modal: ModalState) => void;
-  onSurfaceState: (surface: "feed" | "tag", state: SurfaceState) => void;
+  onSync: () => Promise<unknown>;
 }) {
   const [tagSearch, setTagSearch] = useState("");
   const { t, state } = props;
@@ -571,7 +704,7 @@ function Sidebar(props: {
             <button className="icon-button" type="button" onClick={() => props.onModal({ type: "feedEditor" })} title={t("addFeed")}>
               <Plus size={16} aria-hidden />
             </button>
-            <button className="icon-button" type="button" onClick={() => props.onSurfaceState("feed", "loading")} title={t("syncNow")}>
+            <button className="icon-button" type="button" onClick={() => void props.onSync().catch(() => undefined)} title={t("syncNow")}>
               <RefreshCw size={16} aria-hidden />
             </button>
           </div>
@@ -587,7 +720,7 @@ function Sidebar(props: {
               active={state.feedScope === "starred"}
               title={t("starred")}
               icon={<Star size={15} aria-hidden />}
-              badge={fixtureEntries.filter((entry) => entry.isStarred && !entry.isRead).length}
+              badge={props.entries.filter((entry) => entry.isStarred && !entry.isRead).length}
               onClick={() => props.onFeedScope("starred")}
             />
             {props.feeds.map((feed) => (
@@ -695,7 +828,7 @@ function SidebarRow(props: {
 
 function EntryList(props: {
   t: (key: string, values?: Record<string, string | number>) => string;
-  feeds: typeof feeds;
+  feeds: Feed[];
   state: AppState;
   entries: Entry[];
   selectedEntry: Entry | null;
@@ -704,9 +837,12 @@ function EntryList(props: {
   onUnreadOnly: (unreadOnly: boolean) => void;
   onSelect: (entryId: string) => void;
   onLoadMore: () => void;
-  onMarkQuery: (isRead: boolean) => void;
+  onMarkSelectedRead: () => void;
+  onMarkSelectedUnread: () => void;
+  onMarkAllRead: () => void;
+  onMarkAllUnread: () => void;
   onToggleStar: (entryId: string) => void;
-  onDelete: () => void;
+  onDeleteSelected: () => void;
   onMultipleMode: (enabled: boolean) => void;
   onToggleMultiple: (entryId: string) => void;
   onConfirmMultiple: () => void;
@@ -742,11 +878,11 @@ function EntryList(props: {
             <MenuButton
               label={t("entries")}
               items={[
-                { label: t("markRead"), action: () => props.selectedEntry && props.onMarkQuery(true), disabled: !props.selectedEntry },
-                { label: t("markUnread"), action: () => props.selectedEntry && props.onMarkQuery(false), disabled: !props.selectedEntry },
-                { label: t("delete"), action: props.onDelete, disabled: !props.selectedEntry, destructive: true },
-                { label: t("markAllRead"), action: () => props.onMarkQuery(true) },
-                { label: t("markAllUnread"), action: () => props.onMarkQuery(false) },
+                { label: t("delete"), action: props.onDeleteSelected, disabled: !props.selectedEntry, destructive: true },
+                { label: t("markRead"), action: props.onMarkSelectedRead, disabled: !props.selectedEntry || props.selectedEntry.isRead },
+                { label: t("markUnread"), action: props.onMarkSelectedUnread, disabled: !props.selectedEntry || !props.selectedEntry.isRead },
+                { label: t("markAllRead"), action: props.onMarkAllRead },
+                { label: t("markAllUnread"), action: props.onMarkAllUnread },
                 { label: t("exportMultipleDigest"), action: () => props.onMultipleMode(true) }
               ]}
             />
@@ -756,7 +892,9 @@ function EntryList(props: {
       <div className="entry-scroll">
         {state.entryLoadState === "loading" && <div className="empty-state">{t("loading")}</div>}
         {state.entryLoadState === "error" && <div className="empty-state">{t("errorEntries")}</div>}
-        {props.entries.length === 0 && state.entryLoadState === "ready" && <div className="empty-state">{t("emptyEntries")}</div>}
+        {props.entries.length === 0 && (state.entryLoadState === "ready" || state.entryLoadState === "empty") && (
+          <div className="empty-state">{t("emptyEntries")}</div>
+        )}
         {props.entries.map((entry) => (
           <button
             key={entry.id}
@@ -820,6 +958,11 @@ function ReaderDetail(props: {
   onRelatedExpanded: (expanded: boolean) => void;
   onNotice: (notice: string | null) => void;
   onModal: (modal: ModalState) => void;
+  onRunSummary: (entryId: string) => Promise<void>;
+  onEnsureEntryContent: (entryId: string) => Promise<void>;
+  summaryStatus: "idle" | "running" | "error";
+  summaryError: string | null;
+  onClearSummaryError: () => void;
 }) {
   const { t, state, entry } = props;
   const tags = entry ? props.tags.filter((tag) => entry.tagIds.includes(tag.id)) : [];
@@ -833,6 +976,13 @@ function ReaderDetail(props: {
     setTranslationMode("original");
     setNoteDirty(false);
   }, [entry?.id]);
+
+  useEffect(() => {
+    if (!entry?.readerHtml.trim()) {
+      return;
+    }
+    void props.onEnsureEntryContent(entry.id);
+  }, [entry?.id, entry?.readerHtml, props.onEnsureEntryContent]);
 
   if (!entry) {
     return (
@@ -917,7 +1067,7 @@ function ReaderDetail(props: {
         />
       </div>
       {state.translationNotice && (
-        <div className="reader-banner">
+        <div className="status-note status-note-reader">
           <span>{state.translationNotice}</span>
           <button type="button" onClick={() => props.onNotice(null)}>
             <X size={14} aria-hidden />
@@ -1013,6 +1163,10 @@ function ReaderDetail(props: {
         onExpanded={props.onSummaryExpanded}
         onHeight={props.onSummaryHeight}
         onUpdateEntry={props.onUpdateEntry}
+        onRunSummary={props.onRunSummary}
+        summaryStatus={props.summaryStatus}
+        summaryError={props.summaryError}
+        onClearSummaryError={props.onClearSummaryError}
       />
     </div>
   );
@@ -1146,18 +1300,13 @@ function SummaryPanel(props: {
   onExpanded: (expanded: boolean) => void;
   onHeight: (height: number) => void;
   onUpdateEntry: (entryId: string, transform: (entry: Entry) => Entry) => void;
+  onRunSummary: (entryId: string) => Promise<void>;
+  summaryStatus: "idle" | "running" | "error";
+  summaryError: string | null;
+  onClearSummaryError: () => void;
 }) {
-  const [status, setStatus] = useState<"idle" | "running" | "error">("idle");
-
-  function runSummary() {
-    setStatus("running");
-    window.setTimeout(() => {
-      props.onUpdateEntry(props.entry.id, (entry) => ({
-        ...entry,
-        summaryText: entry.summaryText || `${entry.summary} Key tags and notes are preserved for later digest export.`
-      }));
-      setStatus("idle");
-    }, 450);
+  async function runSummary() {
+    await props.onRunSummary(props.entry.id);
   }
 
   return (
@@ -1182,24 +1331,38 @@ function SummaryPanel(props: {
         />
       )}
       <div className="summary-header">
-        <button type="button" className="plain-button" onClick={() => props.onExpanded(!props.expanded)}>
+        <button
+          type="button"
+          className="plain-button"
+          onClick={() => {
+            props.onClearSummaryError();
+            props.onExpanded(!props.expanded);
+          }}
+        >
           {props.expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
           {props.t("summary")}
         </button>
         <div className="toolbar-spacer" />
-        {status === "running" && <span className="muted">{props.t("loading")}</span>}
+        {props.summaryStatus === "running" && <span className="muted">{props.t("loading")}</span>}
         {props.expanded && (
           <>
-            <button type="button" onClick={runSummary}>
+            <button type="button" onClick={() => void runSummary()} disabled={props.summaryStatus === "running"}>
               {props.t("summary")}
             </button>
-            <button type="button" disabled={status !== "running"} onClick={() => setStatus("idle")}>
+            <button type="button" disabled>
               {props.t("abort")}
             </button>
             <button type="button" disabled={!props.entry.summaryText} onClick={() => void navigator.clipboard?.writeText(props.entry.summaryText)}>
               {props.t("copy")}
             </button>
-            <button type="button" disabled={!props.entry.summaryText} onClick={() => props.onUpdateEntry(props.entry.id, (entry) => ({ ...entry, summaryText: "" }))}>
+            <button
+              type="button"
+              disabled={!props.entry.summaryText}
+              onClick={() => {
+                props.onClearSummaryError();
+                props.onUpdateEntry(props.entry.id, (entry) => ({ ...entry, summaryText: "" }));
+              }}
+            >
               {props.t("clear")}
             </button>
           </>
@@ -1211,7 +1374,7 @@ function SummaryPanel(props: {
             <span>{props.t("target")}=en</span>
             <span>{props.t("detail")}={props.t("medium")}</span>
           </div>
-          <div className="summary-content">{props.entry.summaryText || props.t("emptySummary")}</div>
+          <div className="summary-content">{props.summaryError ?? (props.entry.summaryText || props.t("emptySummary"))}</div>
         </>
       )}
     </section>
@@ -1231,6 +1394,10 @@ function ModalHost(props: {
   onModal: (modal: ModalState) => void;
   onBatchNotice: (notice: string) => void;
   onSetTags: (tags: Tag[]) => void;
+  feedActionStatus: "idle" | "running" | "error";
+  feedActionError: string | null;
+  onAddFeed: (url: string, sync?: boolean) => Promise<Feed>;
+  onImportOpml: (file: File, syncAfterImport: boolean) => Promise<unknown>;
 }) {
   const { t, state } = props;
   if (state.modal.type === "none") {
@@ -1248,8 +1415,24 @@ function ModalHost(props: {
         {state.modal.type === "settings" && (
           <SettingsModal t={t} state={state} onLocale={props.onLocale} onTab={props.onSettingsTab} onModal={props.onModal} />
         )}
-        {state.modal.type === "importOpml" && <SimpleFlow t={t} kind="opml" />}
-        {state.modal.type === "feedEditor" && <FeedEditor t={t} />}
+        {state.modal.type === "importOpml" && (
+          <SimpleFlow
+            t={t}
+            status={props.feedActionStatus}
+            error={props.feedActionError}
+            onImportOpml={props.onImportOpml}
+            onClose={props.onClose}
+          />
+        )}
+        {state.modal.type === "feedEditor" && (
+          <FeedEditor
+            t={t}
+            status={props.feedActionStatus}
+            error={props.feedActionError}
+            onAddFeed={props.onAddFeed}
+            onClose={props.onClose}
+          />
+        )}
         {state.modal.type === "shareDigest" && <DigestModal t={t} entries={props.digestEntries} tags={props.tags} mode={state.modal.exportMode} />}
         {state.modal.type === "batchTagging" && <BatchTaggingModal t={t} notice={state.batchNotice} onNotice={props.onBatchNotice} />}
         {state.modal.type === "tagLibrary" && <TagLibraryModal t={t} tags={props.tags} onSetTags={props.onSetTags} />}
@@ -1497,34 +1680,94 @@ function UsageReportModal(props: {
   );
 }
 
-function FeedEditor(props: { t: (key: string) => string }) {
+function FeedEditor(props: {
+  t: (key: string) => string;
+  status: "idle" | "running" | "error";
+  error: string | null;
+  onAddFeed: (url: string, sync?: boolean) => Promise<Feed>;
+  onClose: () => void;
+}) {
+  const [url, setUrl] = useState("");
+  const [syncOnCreate, setSyncOnCreate] = useState(true);
+
+  async function submit() {
+    if (!url.trim()) {
+      return;
+    }
+    try {
+      await props.onAddFeed(url.trim(), syncOnCreate);
+      props.onClose();
+    } catch {
+      return;
+    }
+  }
+
   return (
     <div className="modal-body">
       <SettingRow label="URL">
-        <input defaultValue="https://example.com/feed.xml" />
+        <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://devblogs.microsoft.com/python/feed/" />
       </SettingRow>
-      <SettingRow label={props.t("feeds")}>
-        <input defaultValue="Example Feed" />
-      </SettingRow>
+      <label className="check-row">
+        <input type="checkbox" checked={syncOnCreate} onChange={(event) => setSyncOnCreate(event.target.checked)} />
+        {props.t("syncNow")}
+      </label>
+      {props.error && <p className="panel-status">{props.error}</p>}
       <div className="modal-actions">
-        <button type="button">{props.t("apply")}</button>
+        <button type="button" onClick={props.onClose}>
+          {props.t("cancel")}
+        </button>
+        <button type="button" disabled={!url.trim() || props.status === "running"} onClick={() => void submit()}>
+          {props.status === "running" ? props.t("loading") : props.t("apply")}
+        </button>
       </div>
     </div>
   );
 }
 
-function SimpleFlow(props: { t: (key: string) => string; kind: string }) {
+function SimpleFlow(props: {
+  t: (key: string) => string;
+  status: "idle" | "running" | "error";
+  error: string | null;
+  onImportOpml: (file: File, syncAfterImport: boolean) => Promise<unknown>;
+  onClose: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [syncAfterImport, setSyncAfterImport] = useState(true);
+
+  async function submit() {
+    if (!file) {
+      return;
+    }
+    try {
+      await props.onImportOpml(file, syncAfterImport);
+      props.onClose();
+    } catch {
+      return;
+    }
+  }
+
   return (
     <div className="modal-body">
       <SettingRow label={props.t("importOpml")}>
-        <input type="file" accept=".opml,.xml" />
+        <input
+          type="file"
+          accept=".opml,.xml,text/xml,application/xml"
+          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+        />
       </SettingRow>
       <label className="check-row">
-        <input type="checkbox" />
-        {props.t("replaceExistingFeeds")}
+        <input type="checkbox" checked={syncAfterImport} onChange={(event) => setSyncAfterImport(event.target.checked)} />
+        {props.t("syncNow")}
       </label>
+      {file && <p className="panel-status">{file.name}</p>}
+      {props.error && <p className="panel-status">{props.error}</p>}
       <div className="modal-actions">
-        <button type="button">{props.t("continue")}</button>
+        <button type="button" onClick={props.onClose}>
+          {props.t("cancel")}
+        </button>
+        <button type="button" disabled={!file || props.status === "running"} onClick={() => void submit()}>
+          {props.status === "running" ? props.t("loading") : props.t("continue")}
+        </button>
       </div>
     </div>
   );

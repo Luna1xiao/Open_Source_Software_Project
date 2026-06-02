@@ -42,6 +42,21 @@ def test_save_article_updates_existing_row(tmp_path) -> None:
     assert get_article("article-1", db_path) == updated
 
 
+def test_save_article_preserves_raw_html_for_cleaner(tmp_path) -> None:
+    db_path = tmp_path / "mercury-test.db"
+    init_db(db_path)
+    save_feed(_feed(), db_path)
+
+    article = _article(reader_html="<main><p>Hello Mercury</p></main>")
+    save_article(article, db_path)
+
+    content = get_article_content("article-1", db_path)
+    assert content is not None
+    assert content.raw_html == "<main><p>Hello Mercury</p></main>"
+    assert content.cleaned_html == ""
+    assert get_article("article-1", db_path) == article
+
+
 def test_save_articles_batches_multiple_entries(tmp_path) -> None:
     db_path = tmp_path / "mercury-test.db"
     init_db(db_path)

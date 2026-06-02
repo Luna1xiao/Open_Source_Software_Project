@@ -21,3 +21,16 @@ class Entry(BaseModel):
     summary_text: str
     translation_html: str | None = None
     translation_status: LongTaskStatus
+
+
+class EntryReadStateRequest(BaseModel):
+    is_read: bool
+
+
+class EntryStarStateRequest(BaseModel):
+    is_starred: bool
+
+
+class EntryDeleteResult(BaseModel):
+    entry_id: str
+    deleted: bool

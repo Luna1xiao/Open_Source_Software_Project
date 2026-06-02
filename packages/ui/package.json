@@ -11,6 +11,8 @@
     "build": "tsc --noEmit --pretty false && vite build"
   },
   "dependencies": {
+    "@mercury/ipc-client": "workspace:*",
+    "@mercury/shared-types": "workspace:*",
     "@vitejs/plugin-react": "^5.2.0",
     "lucide-react": "^0.468.0",
     "react": "^19.2.6",

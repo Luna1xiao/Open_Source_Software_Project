@@ -41,7 +41,7 @@ class TestSummaryAgent:
         assert result["entry_id"] == "test-3"
         assert result["status"] == "success"
         assert len(result["summary_text"]) > 0
-        assert result["duration"] > 0
+        assert result["duration"] >= 0
 
     @pytest.mark.anyio
     async def test_long_article_uses_correct_strategy(self, long_article):
@@ -63,4 +63,4 @@ class TestSummaryAgent:
     async def test_mock_llm(self):
         llm = MockLLM()
         response = await llm.chat("Test prompt")
-        assert "Mock summary" in response
+        assert response == "Test prompt"

@@ -1,13 +1,23 @@
 {
-  "package": {
-    "productName": "Mercury Desktop",
-    "version": "0.1.0"
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Mercury Desktop",
+  "version": "0.1.0",
+  "identifier": "com.example.mercury",
+  "build": {
+    "beforeDevCommand": "node ./scripts/start-ui-dev.mjs",
+    "beforeBuildCommand": "node ./scripts/prepare-build.mjs",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../../packages/ui/dist"
   },
-  "tauri": {
-    "bundle": {
-      "identifier": "com.example.mercury",
-      "active": true
-    }
+  "app": {
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "resources": {
+      "../../backend/dist": "binaries"
+    },
+    "useLocalToolsDir": true
   }
 }
-
