@@ -1,5 +1,8 @@
 """SummaryAgent 核心实现"""
 
+import re
+from urllib.parse import urlparse
+
 from time import time
 
 from ..core.hooks import HookRegistry
@@ -18,7 +21,19 @@ class MockLLM:
     """Mock LLM 用于测试"""
 
     async def chat(self, prompt: str) -> str:
-        return f"Mock summary for: {prompt[:50]}..."
+        content = _extract_mock_content(prompt)
+        if not content:
+            return "This article does not contain enough readable content to summarize."
+
+        sentences = [segment.strip() for segment in re.split(r"(?<=[。！？.!?])\s+", content) if segment.strip()]
+        if not sentences:
+            return _truncate(content, 180)
+
+        first = _truncate(sentences[0], 120)
+        second = _truncate(sentences[1], 120) if len(sentences) > 1 else ""
+        if second:
+            return f"{first}\n\n{second}"
+        return first
 
 
 class SummaryAgent:
@@ -28,10 +43,16 @@ class SummaryAgent:
         # 默认使用真实 LLM，测试时可传入 use_mock=True
         if llm_provider:
             self.llm = llm_provider
+            self.provider_name = getattr(llm_provider, "provider_name", _provider_name_from_base_url(getattr(llm_provider, "base_url", "")))
+            self.model_name = getattr(llm_provider, "model", "custom")
         elif use_mock:
             self.llm = MockLLM()
+            self.provider_name = "mock"
+            self.model_name = "mock-summary"
         else:
             self.llm = LLMClient()
+            self.provider_name = _provider_name_from_base_url(self.llm.base_url)
+            self.model_name = self.llm.model
 
         self.tools = ToolRegistry()
         self.hooks = HookRegistry()
@@ -97,8 +118,32 @@ class SummaryAgent:
             "entry_id": entry_id,
             "summary_text": state.summary or "",
             "status": "success",
-            "provider": "ecnu",
-            "model": "ecnu-max",
+            "provider": self.provider_name,
+            "model": self.model_name,
             "steps": result.steps,
             "duration": result.total_duration,
         }
+
+
+def _provider_name_from_base_url(base_url: str) -> str:
+    if not base_url:
+        return "custom"
+
+    host = urlparse(base_url).hostname or base_url
+    host = host.replace("www.", "")
+    parts = host.split(".")
+    if len(parts) >= 2:
+        return parts[-2]
+    return host
+
+
+def _extract_mock_content(prompt: str) -> str:
+    parts = prompt.split("\n\n", 1)
+    content = parts[1] if len(parts) > 1 else prompt
+    return re.sub(r"\s+", " ", content).strip()
+
+
+def _truncate(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"

@@ -39,7 +39,7 @@ def get_article(article_id: str, db_path: Path | str | None = None) -> Entry | N
                 articles.is_read,
                 articles.is_starred,
                 articles.note,
-                article_content.cleaned_html,
+                COALESCE(NULLIF(article_content.cleaned_html, ''), article_content.raw_html, '') AS reader_html,
                 (
                     SELECT GROUP_CONCAT(tag_id)
                     FROM article_tags
@@ -101,7 +101,7 @@ def list_articles(
             articles.is_read,
             articles.is_starred,
             articles.note,
-            article_content.cleaned_html,
+            COALESCE(NULLIF(article_content.cleaned_html, ''), article_content.raw_html, '') AS reader_html,
             (
                 SELECT GROUP_CONCAT(tag_id)
                 FROM article_tags
@@ -313,7 +313,7 @@ def search_articles(
             articles.is_read,
             articles.is_starred,
             articles.note,
-            article_content.cleaned_html,
+            COALESCE(NULLIF(article_content.cleaned_html, ''), article_content.raw_html, '') AS reader_html,
             (
                 SELECT GROUP_CONCAT(tag_id)
                 FROM article_tags
@@ -367,7 +367,7 @@ def search_articles(
                     articles.is_read,
                     articles.is_starred,
                     articles.note,
-                    article_content.cleaned_html,
+                    COALESCE(NULLIF(article_content.cleaned_html, ''), article_content.raw_html, '') AS reader_html,
                     (
                         SELECT GROUP_CONCAT(tag_id)
                         FROM article_tags
@@ -427,7 +427,7 @@ def _row_to_entry(row: sqlite3.Row) -> Entry:
         is_read=bool(row["is_read"]),
         is_starred=bool(row["is_starred"]),
         tag_ids=tag_ids,
-        reader_html=row["cleaned_html"] or "",
+        reader_html=row["reader_html"] or "",
         web_preview="",
         related_entry_ids=[],
         note=row["note"],
@@ -483,12 +483,13 @@ def _save_article(conn: sqlite3.Connection, entry: Entry) -> None:
         """
         INSERT INTO article_content (
             article_id,
+            raw_html,
             cleaned_html,
             updated_at
         )
-        VALUES (?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, '', CURRENT_TIMESTAMP)
         ON CONFLICT(article_id) DO UPDATE SET
-            cleaned_html = excluded.cleaned_html,
+            raw_html = excluded.raw_html,
             updated_at = CURRENT_TIMESTAMP
         """,
         (entry.id, entry.reader_html),

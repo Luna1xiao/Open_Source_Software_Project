@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>Mercury Demo Feeds</title>
+  </head>
+  <body>
+    <outline
+      text="Microsoft Python Blog"
+      title="Microsoft Python Blog"
+      type="rss"
+      xmlUrl="https://devblogs.microsoft.com/python/feed/"
+      htmlUrl="https://devblogs.microsoft.com/python/"
+    />
+    <outline
+      text="The Keyword"
+      title="The Keyword"
+      type="rss"
+      xmlUrl="https://blog.google/rss/"
+      htmlUrl="https://blog.google/"
+    />
+  </body>
+</opml>

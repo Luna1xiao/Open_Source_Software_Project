@@ -17,6 +17,15 @@ coverage/
 src-tauri/target/
 target/
 release/
+apps/desktop/binaries/
+apps/desktop/gen/
+apps/desktop/src-tauri/
+
+# Python desktop sidecar build outputs
+backend/build/
+backend/dist/
+backend/*.spec
+backend/.venv-sidecar/
 
 # Logs
 *.log

@@ -33,7 +33,7 @@ from db.repositories.provider_repo import (
     list_provider_settings,
     save_provider_settings,
 )
-from db.repositories.tag_repo import save_tag, set_article_tags
+from db.repositories.tag_repo import query_tags, save_tag, set_article_tags
 from db.repositories.usage_repo import query_usage, record_usage
 
 __all__ = [
@@ -54,6 +54,7 @@ __all__ = [
     "mark_article_read",
     "mark_article_starred",
     "query_feeds",
+    "query_tags",
     "query_usage",
     "record_usage",
     "save_agent_result",

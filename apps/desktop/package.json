@@ -2,10 +2,18 @@
   "name": "desktop",
   "private": true,
   "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tauri dev",
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "build": "tauri build"
+    "build:sidecar": "node ./scripts/prepare-build.mjs",
+    "prepare:mac-icons": "node ./scripts/prepare-macos-icons.mjs",
+    "build": "tauri build",
+    "build:mac": "node ./scripts/prepare-macos-icons.mjs && tauri build --bundles app,dmg"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
   }
 }
 

@@ -12,7 +12,15 @@ class Settings(BaseSettings):
     log_level: str = "info"
     data_dir: Path = Field(default_factory=lambda: Path.home() / ".mercury")
     db_path: Path | None = None
-    cors_origins: list[str] = ["http://127.0.0.1:5173", "http://localhost:5173"]
+    cors_origins: list[str] = [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
+        "app://localhost",
+        "null",
+    ]
 
     def resolved_db_path(self) -> Path:
         return self.db_path or (self.data_dir / "mercury.db")

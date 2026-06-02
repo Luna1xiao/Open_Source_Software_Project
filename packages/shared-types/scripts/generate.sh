@@ -13,6 +13,48 @@ URL="http://127.0.0.1:${PORT}/openapi.json"
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 OUT="${REPO_ROOT}/packages/shared-types/src/generated.ts"
 BACKEND_DIR="${REPO_ROOT}/backend"
+OPENAPI_CLI="$(echo "${REPO_ROOT}"/node_modules/.pnpm/openapi-typescript@*/node_modules/openapi-typescript/bin/cli.js)"
+
+find_python() {
+  if command -v uv >/dev/null 2>&1; then
+    echo "uv"
+    return
+  fi
+  if command -v py >/dev/null 2>&1; then
+    echo "py"
+    return
+  fi
+  if [[ -x "/mnt/c/Windows/py.exe" ]]; then
+    echo "/mnt/c/Windows/py.exe"
+    return
+  fi
+  echo "python"
+}
+
+find_node() {
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return
+  fi
+  if [[ -x "/mnt/d/Program Files/nodejs/node.exe" ]]; then
+    echo "/mnt/d/Program Files/nodejs/node.exe"
+    return
+  fi
+  if [[ -x "/mnt/c/Program Files/nodejs/node.exe" ]]; then
+    echo "/mnt/c/Program Files/nodejs/node.exe"
+    return
+  fi
+  echo "node"
+}
+
+to_host_path() {
+  local value="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "${value}"
+    return
+  fi
+  echo "${value}"
+}
 
 cleanup() {
   if [[ -n "${UVICORN_PID:-}" ]]; then
@@ -23,7 +65,12 @@ trap cleanup EXIT
 
 if ! curl -fsS "${URL}" > /dev/null 2>&1; then
   echo "No backend detected on :${PORT}; starting uvicorn temporarily..."
-  (cd "${BACKEND_DIR}" && uv run uvicorn app.main:app --host 127.0.0.1 --port "${PORT}") &
+  PYTHON_CMD="$(find_python)"
+  if [[ "${PYTHON_CMD}" == "uv" ]]; then
+    (cd "${BACKEND_DIR}" && uv run uvicorn app.main:app --host 127.0.0.1 --port "${PORT}") &
+  else
+    (cd "${BACKEND_DIR}" && "${PYTHON_CMD}" -m uvicorn app.main:app --host 127.0.0.1 --port "${PORT}") &
+  fi
   UVICORN_PID=$!
   for _ in $(seq 1 30); do
     sleep 0.5
@@ -32,5 +79,5 @@ if ! curl -fsS "${URL}" > /dev/null 2>&1; then
 fi
 
 echo "Fetching schema from ${URL}"
-pnpm exec openapi-typescript "${URL}" -o "${OUT}"
+"$(find_node)" "$(to_host_path "${OPENAPI_CLI}")" "${URL}" -o "$(to_host_path "${OUT}")"
 echo "Wrote ${OUT}"

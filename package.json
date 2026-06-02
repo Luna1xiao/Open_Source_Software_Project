@@ -9,7 +9,8 @@
   "scripts": {
     "dev:ui": "pnpm --filter ui dev",
     "dev:backend": "cd backend && uv run uvicorn app.main:app --reload",
-    "gen:types": "bash packages/shared-types/scripts/generate.sh",
+    "dev:desktop": "pnpm --filter desktop tauri:dev",
+    "gen:types": "node packages/shared-types/scripts/generate.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test"
   },
