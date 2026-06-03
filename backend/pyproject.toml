@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    "httpx>=0.27",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "beautifulsoup4>=4.12",
@@ -17,6 +18,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.3",
+    "pytest-asyncio>=0.24",
     "httpx>=0.27",
     "ruff>=0.7",
 ]
@@ -39,8 +41,10 @@ select = ["E", "F", "I", "W", "UP", "B"]
 "agent_summary/tests/conftest.py" = ["E501"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "agent_summary/tests"]
+testpaths = ["tests", "agent_summary/tests", "llm_providers/tests"]
 pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "network: tests that call live internet feed sources",
 ]

@@ -1,0 +1,44 @@
+{
+  "providers": [
+    {
+      "name": "mimo",
+      "kind": "openai_compatible",
+      "model": "mimo-v2.5-pro",
+      "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+      "api_key": "tp-your-mimo-api-key",
+      "api_key_header": "api-key",
+      "is_default": false
+    },
+    {
+      "name": "chatecnu",
+      "kind": "openai_compatible",
+      "model": "ecnu-plus",
+      "base_url": "https://chat.ecnu.edu.cn/open/api/v1",
+      "api_key": "sk-your-chatecnu-api-key",
+      "is_default": true
+    },
+    {
+      "name": "local-openai",
+      "kind": "openai_compatible",
+      "model": "gpt-5.5",
+      "base_url": "http://localhost:48760/v1",
+      "api_key": "your-local-api-key",
+      "is_default": false
+    },
+    {
+      "name": "anthropic",
+      "kind": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "base_url": "https://api.anthropic.com/v1",
+      "api_key": "sk-ant-your-anthropic-api-key",
+      "is_default": false
+    },
+    {
+      "name": "ollama",
+      "kind": "ollama",
+      "model": "llama3",
+      "base_url": "http://127.0.0.1:11434",
+      "is_default": false
+    }
+  ]
+}
