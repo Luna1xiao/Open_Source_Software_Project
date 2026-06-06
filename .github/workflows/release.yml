@@ -1,0 +1,115 @@
+name: Release
+
+# 推送形如 v0.1.0 的标签时触发，自动构建安装包并发布 GitHub Release。
+# 也可在 Actions 页面手动触发（workflow_dispatch），用于测试构建。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "用于创建 Release 的标签名（手动触发时填写，例如 v0.1.0）"
+        required: false
+        default: ""
+
+# 创建 Release 需要写权限
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS
+            build_cmd: pnpm --filter desktop build:mac
+            artifact_glob: apps/desktop/target/release/bundle/dmg/*.dmg
+          - os: windows-latest
+            label: Windows
+            build_cmd: pnpm --filter desktop build
+            artifact_glob: apps/desktop/target/release/bundle/nsis/*-setup.exe
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # 缓存 Rust 编译产物，加快后续构建
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 构建：前端 UI + Python sidecar（由 tauri beforeBuildCommand 自动完成）+ 安装包
+      - name: Build desktop installer
+        run: ${{ matrix.build_cmd }}
+
+      # 收集安装包到统一目录，方便发布
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist-release
+          cp ${{ matrix.artifact_glob }} dist-release/ || true
+          echo "已收集的安装包："
+          ls -la dist-release
+
+      # 上传为 workflow artifact（即使不发 Release 也能在 Actions 页面下载）
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mercury-desktop-${{ matrix.label }}
+          path: dist-release/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    # 仅在打 tag（或手动填写了 tag）时发布 Release
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag != ''
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-files
+          merge-multiple: true
+
+      - name: List files to publish
+        run: ls -R release-files
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # tag 触发时用 github.ref_name；手动触发时用输入框里的 tag
+          tag_name: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
+          name: Mercury Desktop ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release-files/**/*
