@@ -1,3 +1,4 @@
+
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Mercury Desktop",
@@ -10,14 +11,21 @@
     "frontendDist": "../../packages/ui/dist"
   },
   "app": {
-    "windows": []
+    "windows": [
+      {
+        "title": "Mercury Desktop",
+        "width": 1000,
+        "height": 700,
+        "resizable": true
+      }
+    ]
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": ["dmg", "nsis"],
     "resources": {
       "../../backend/dist/mercury-backend": "binaries"
     },
-    "useLocalToolsDir": true
+    "useLocalToolsDir": false
   }
 }
