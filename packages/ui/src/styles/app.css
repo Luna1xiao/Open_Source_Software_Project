@@ -569,6 +569,31 @@ textarea {
   width: 50%;
 }
 
+.reader-surface.split-translation > * {
+  width: 50%;
+}
+
+.reader-article.translation-pane {
+  border-left: 1px solid var(--color-border);
+}
+
+.icon-button.translate-button {
+  width: auto;
+  gap: 6px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.icon-button .spin {
+  animation: reader-spin 0.9s linear infinite;
+}
+
+@keyframes reader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .reader-article {
   flex: 1;
   min-width: 0;
