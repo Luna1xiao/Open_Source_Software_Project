@@ -63,6 +63,16 @@ export async function requestSummary(entryId: string): Promise<components["schem
   return generateSummary(mercuryClient, { entry_id: entryId });
 }
 
+export async function requestTranslation(
+  entryId: string,
+  targetLang: string
+): Promise<components["schemas"]["TranslationResult"]> {
+  return mercuryClient.request<
+    components["schemas"]["TranslationResult"],
+    components["schemas"]["TranslationRequest"]
+  >("POST", "/agents/translation", { body: { entry_id: entryId, target_lang: targetLang } });
+}
+
 export async function subscribeToFeed(url: string, sync = true): Promise<Feed> {
   return toUiFeed(await createFeed(mercuryClient, { url, sync }));
 }

@@ -61,6 +61,7 @@ import {
   getApiErrorMessage,
   loadProviders,
   removeProviderConfig,
+  requestTranslation,
   updateProviderConfig
 } from "./services/api";
 import { readStoredBoolean, readStoredNumber, writeStoredBoolean, writeStoredNumber } from "./services/storage";
@@ -1004,8 +1005,14 @@ function ReaderDetail(props: {
   }
 
   const articleHtml = translationMode === "translation" && entry.translationHtml ? entry.translationHtml : entry.readerHtml;
+  const isTranslating = entry.translationStatus === "running";
+  const showSplitTranslation = state.readerMode === "reader" && translationMode === "translation" && Boolean(entry.translationHtml);
+  const translationHtmlRendered = useMemo(
+    () => (entry.translationHtml ? markdownToHtml(entry.translationHtml) : ""),
+    [entry.translationHtml]
+  );
 
-  function toggleTranslation() {
+  async function toggleTranslation() {
     if (!entry) {
       return;
     }
@@ -1013,6 +1020,45 @@ function ReaderDetail(props: {
       props.onNotice(t("translationReaderOnly"));
       return;
     }
+
+    // Reader mode: real backend translation with side-by-side original/translation.
+    if (state.readerMode === "reader") {
+      if (translationMode === "translation") {
+        setTranslationMode("original");
+        return;
+      }
+      setTranslationMode("translation");
+      if (entry.translationHtml) {
+        return;
+      }
+      if (isTranslating) {
+        return;
+      }
+      const entryId = entry.id;
+      const targetLang = state.locale === "zh-Hans" ? "中文" : "English";
+      props.onUpdateEntry(entryId, (current) => ({ ...current, translationStatus: "running" }));
+      try {
+        const result = await requestTranslation(entryId, targetLang);
+        if (result.status === "success" && result.translation_html.trim()) {
+          props.onUpdateEntry(entryId, (current) => ({
+            ...current,
+            translationStatus: "success",
+            translationHtml: result.translation_html
+          }));
+        } else {
+          props.onUpdateEntry(entryId, (current) => ({ ...current, translationStatus: "failure" }));
+          props.onNotice(t("translationFailed"));
+          setTranslationMode("original");
+        }
+      } catch (error) {
+        props.onUpdateEntry(entryId, (current) => ({ ...current, translationStatus: "failure" }));
+        props.onNotice(getApiErrorMessage(error));
+        setTranslationMode("original");
+      }
+      return;
+    }
+
+    // Dual mode: preserve existing mock preview behavior unchanged.
     if (translationMode === "original") {
       setTranslationMode("translation");
       props.onUpdateEntry(entry.id, (current) => ({ ...current, translationStatus: current.translationHtml ? "success" : "running" }));
@@ -1040,8 +1086,9 @@ function ReaderDetail(props: {
             </button>
           ))}
         </div>
-        <button className="icon-button" type="button" onClick={toggleTranslation} title={translationMode === "original" ? t("switchToTranslation") : t("returnToOriginal")}>
-          <Languages size={17} aria-hidden />
+        <button className="icon-button translate-button" type="button" disabled={isTranslating} onClick={() => void toggleTranslation()} title={translationMode === "original" ? t("switchToTranslation") : t("returnToOriginal")}>
+          <Languages size={17} aria-hidden className={isTranslating ? "spin" : undefined} />
+          <span>{isTranslating ? t("translatingButton") : translationMode === "translation" ? t("returnToOriginal") : t("translateButton")}</span>
         </button>
         <button
           className="icon-button"
@@ -1116,16 +1163,27 @@ function ReaderDetail(props: {
           ))}
         </div>
       )}
-      <div className={`reader-surface mode-${state.readerMode}`}>
+      <div className={`reader-surface mode-${state.readerMode}${showSplitTranslation ? " split-translation" : ""}`}>
         {showReader && (
           <article
             className={`reader-article theme-${state.theme.preset} font-${state.theme.fontFamily}`}
             style={{
               fontSize: state.theme.fontSize,
               lineHeight: state.theme.lineHeight,
-              maxWidth: state.readerMode === "dual" ? "none" : state.theme.contentWidth
+              maxWidth: state.readerMode === "dual" || showSplitTranslation ? "none" : state.theme.contentWidth
             }}
-            dangerouslySetInnerHTML={{ __html: articleHtml }}
+            dangerouslySetInnerHTML={{ __html: showSplitTranslation ? entry.readerHtml : articleHtml }}
+          />
+        )}
+        {showSplitTranslation && (
+          <article
+            className={`reader-article translation-pane theme-${state.theme.preset} font-${state.theme.fontFamily}`}
+            style={{
+              fontSize: state.theme.fontSize,
+              lineHeight: state.theme.lineHeight,
+              maxWidth: "none"
+            }}
+            dangerouslySetInnerHTML={{ __html: translationHtmlRendered }}
           />
         )}
         {showWeb && (
@@ -2063,6 +2121,120 @@ function formatDate(value: string): string {
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function renderInlineMarkdown(text: string): string {
+  let html = escapeHtml(text);
+  // Links: [label](url)
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_match, label, url) =>
+    `<a href="${url}" target="_blank" rel="noopener">${label}</a>`
+  );
+  // Bold then italic, code spans
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  return html;
+}
+
+// Minimal markdown -> HTML for translated content (no external deps).
+// Handles headings, lists, blockquotes, code fences, and paragraphs.
+function markdownToHtml(markdown: string): string {
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const blocks: string[] = [];
+  let paragraph: string[] = [];
+  let listItems: string[] = [];
+  let listOrdered = false;
+  let inCodeFence = false;
+  let codeLines: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length > 0) {
+      blocks.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (listItems.length > 0) {
+      const tag = listOrdered ? "ol" : "ul";
+      blocks.push(`<${tag}>${listItems.join("")}</${tag}>`);
+      listItems = [];
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine;
+
+    if (line.trim().startsWith("```")) {
+      if (inCodeFence) {
+        blocks.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+        codeLines = [];
+        inCodeFence = false;
+      } else {
+        flushParagraph();
+        flushList();
+        inCodeFence = true;
+      }
+      continue;
+    }
+    if (inCodeFence) {
+      codeLines.push(line);
+      continue;
+    }
+
+    if (line.trim() === "") {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = heading[1].length;
+      blocks.push(`<h${level}>${renderInlineMarkdown(heading[2].trim())}</h${level}>`);
+      continue;
+    }
+
+    const ordered = line.match(/^\s*\d+\.\s+(.*)$/);
+    const unordered = line.match(/^\s*[-*+]\s+(.*)$/);
+    if (ordered || unordered) {
+      flushParagraph();
+      const ofType = Boolean(ordered);
+      if (listItems.length > 0 && ofType !== listOrdered) {
+        flushList();
+      }
+      listOrdered = ofType;
+      const item = (ordered ?? unordered)![1];
+      listItems.push(`<li>${renderInlineMarkdown(item.trim())}</li>`);
+      continue;
+    }
+
+    const quote = line.match(/^\s*>\s?(.*)$/);
+    if (quote) {
+      flushParagraph();
+      flushList();
+      blocks.push(`<blockquote>${renderInlineMarkdown(quote[1].trim())}</blockquote>`);
+      continue;
+    }
+
+    paragraph.push(line.trim());
+  }
+
+  if (inCodeFence) {
+    blocks.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+  }
+  flushParagraph();
+  flushList();
+
+  return blocks.join("\n");
 }
 
 function capitalize(value: string): string {
