@@ -116,7 +116,10 @@
 # def run(command: list[str]) -> None:
 #     env = os.environ.copy()
 #     env["PYTHONNOUSERSITE"] = "1"
-#     for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+#     for key in (
+#         "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+#         "http_proxy", "https_proxy", "all_proxy",
+#     ):
 #         env.pop(key, None)
 #     subprocess.run(command, cwd=BACKEND_DIR, check=True, env=env)
 #
@@ -157,7 +160,6 @@ import shutil
 import subprocess
 import time
 import tomllib
-import venv
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
