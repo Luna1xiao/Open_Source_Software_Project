@@ -5,10 +5,11 @@ import re
 from dataclasses import dataclass
 
 from app.schemas.agent import SummaryRequest, SummaryResult
-from db import get_article, get_article_content, save_agent_result
+from db import get_article, get_article_content, record_usage, save_agent_result
+from llm_providers import ChatMessage, get_provider
+from llm_providers.base import LLMProvider
 
 from .agent.summary_agent import SummaryAgent
-from .llm_client import LLMClient
 
 
 class SummaryServiceError(Exception):
@@ -48,16 +49,35 @@ class SummaryService:
             model=result["model"],
         )
         save_agent_result(summary)
+
+        # 记录 token 用量到 usage_buckets
+        usage = result.get("usage", {})
+        if usage:
+            from datetime import datetime, timezone
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            record_usage(
+                day=today,
+                provider=result["provider"],
+                model=result["model"],
+                agent="summary",
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+            )
+
         return summary
 
     def _build_agent(self, request: SummaryRequest) -> SummaryAgent:
-        provider = (request.provider or "").strip().lower()
-        use_mock = provider == "mock" or _use_mock_llm()
+        provider_name = (request.provider or "").strip().lower()
+        use_mock = provider_name == "mock" or _use_mock_llm()
         if use_mock:
             return _instantiate_agent(self.agent_factory, use_mock=True)
 
-        llm = LLMClient(model=request.model)
-        return _instantiate_agent(self.agent_factory, llm_provider=llm)
+        # 使用 llm_providers registry 获取提供商
+        provider = get_provider(request.provider if request.provider else None)
+        # 如果请求指定了 model，创建一个包装器来覆盖默认 model
+        if request.model:
+            provider = ModelOverrideProvider(provider, request.model)
+        return _instantiate_agent(self.agent_factory, llm_provider=provider)
 
     def _resolve_content(self, entry_id: str, reader_html: str) -> str:
         stored_content = get_article_content(entry_id)
@@ -72,14 +92,53 @@ class SummaryService:
         return ""
 
 
+class ModelOverrideProvider:
+    """包装 LLMProvider，允许覆盖默认 model 名称。"""
+
+    def __init__(self, provider: LLMProvider, model: str):
+        self._provider = provider
+        self._model = model
+
+    @property
+    def name(self) -> str:
+        return self._provider.name
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    async def chat(self, messages, *, stream=False, options=None):
+        return await self._provider.chat(messages, stream=stream, options=options)
+
+
 def _strip_html(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", value)).strip()
 
 
 def _use_mock_llm() -> bool:
+    # 1. 如果环境变量明确设置了 LLM_USE_MOCK，使用它
+    env_mock = os.environ.get("LLM_USE_MOCK", "").strip().lower()
+    if env_mock in {"1", "true", "yes", "on"}:
+        return True
+    if env_mock in {"0", "false", "no", "off"}:
+        return False
+    
+    # 2. 如果环境变量有 API Key，不使用 mock
     if os.environ.get("LLM_API_KEY", "").strip():
         return False
-    return os.environ.get("LLM_USE_MOCK", "true").strip().lower() in {"1", "true", "yes", "on"}
+    
+    # 3. 检查 providers.json 是否有配置
+    try:
+        from llm_providers.config import load_providers_file, providers_path
+        from app.config import settings
+        config = load_providers_file(providers_path(settings.data_dir))
+        if config.providers:
+            return False  # 有 provider 配置，不使用 mock
+    except Exception:
+        pass
+    
+    # 4. 默认使用 mock
+    return True
 
 
 def _instantiate_agent(agent_factory, **kwargs):

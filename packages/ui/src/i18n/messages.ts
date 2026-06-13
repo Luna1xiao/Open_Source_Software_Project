@@ -137,7 +137,28 @@ const en: Messages = {
   monoFont: "Mono",
   previewSentence: "Mercury reader typography preview",
   forever: "Forever",
-  localProvider: "Local"
+  localProvider: "Local",
+  noProviders: "No providers configured",
+  testing: "Testing...",
+  testConnection: "Test Connection",
+  providerType: "Provider Type",
+  failed: "Failed",
+  addProvider: "Add Provider",
+  providerName: "Provider Name",
+  baseUrl: "Base URL",
+  apiKey: "API Key",
+  apiKeyHeader: "API Key Header",
+  defaultProvider: "Default Provider",
+  setAsDefault: "Set as default",
+  fallbackChain: "LLMClient / mock",
+  addNew: "Add New",
+  deleteProvider: "Delete Provider",
+  saveProvider: "Save Provider",
+  deleting: "Deleting...",
+  saving: "Saving...",
+  providerAdded: "Provider added successfully",
+  providerUpdated: "Provider updated successfully",
+  providerDeleted: "Provider deleted successfully"
 };
 
 const zhHans: Messages = {
@@ -275,7 +296,28 @@ const zhHans: Messages = {
   monoFont: "等宽",
   previewSentence: "Mercury 阅读排版预览",
   forever: "永久",
-  localProvider: "本地"
+  localProvider: "本地",
+  noProviders: "未配置服务商",
+  testing: "测试中...",
+  testConnection: "测试连接",
+  providerType: "服务商类型",
+  failed: "失败",
+  addProvider: "添加服务商",
+  providerName: "服务商名称",
+  baseUrl: "Base URL",
+  apiKey: "API Key",
+  apiKeyHeader: "API Key Header",
+  defaultProvider: "默认服务商",
+  setAsDefault: "设为默认",
+  fallbackChain: "LLMClient / mock",
+  addNew: "新增",
+  deleteProvider: "删除服务商",
+  saveProvider: "保存服务商",
+  deleting: "删除中...",
+  saving: "保存中...",
+  providerAdded: "服务商添加成功",
+  providerUpdated: "服务商更新成功",
+  providerDeleted: "服务商删除成功"
 };
 
 export const dictionaries: Record<LocaleCode, Messages> = {

@@ -81,3 +81,5 @@ export * from "./feeds";
 export * from "./content";
 export * from "./summary";
 export * from "./tags";
+export * from "./providers";
+export * from "./translation";

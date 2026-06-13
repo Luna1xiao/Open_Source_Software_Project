@@ -993,7 +993,9 @@ function ReaderDetail(props: {
     );
   }
 
-  const articleHtml = translationMode === "translation" && entry.translationHtml ? entry.translationHtml : entry.readerHtml;
+  const articleHtml = translationMode === "translation" && entry.translationHtml 
+    ? renderSimpleMarkdown(entry.translationHtml) 
+    : entry.readerHtml;
 
   function toggleTranslation() {
     if (!entry) {
@@ -1005,16 +1007,26 @@ function ReaderDetail(props: {
     }
     if (translationMode === "original") {
       setTranslationMode("translation");
-      props.onUpdateEntry(entry.id, (current) => ({ ...current, translationStatus: current.translationHtml ? "success" : "running" }));
-      window.setTimeout(() => {
-        props.onUpdateEntry(entry.id, (current) => ({
-          ...current,
-          translationStatus: "success",
-          translationHtml:
-            current.translationHtml ??
-            `<h1>${current.title}</h1><p>[Translated] ${current.summary}</p><p>${stripHtml(current.readerHtml)}</p>`
-        }));
-      }, 350);
+      // 如果已有翻译，直接显示
+      if (entry.translationHtml) {
+        props.onUpdateEntry(entry.id, (current) => ({ ...current, translationStatus: "success" }));
+        return;
+      }
+      // 否则调用翻译 API
+      props.onUpdateEntry(entry.id, (current) => ({ ...current, translationStatus: "running" }));
+      import("./services/api").then(({ translateArticle }) => {
+        translateArticle(entry.id, "Chinese")
+          .then((result) => {
+            props.onUpdateEntry(entry.id, (current) => ({
+              ...current,
+              translationHtml: result.translation_html,
+              translationStatus: result.status === "success" ? "success" : "failure"
+            }));
+          })
+          .catch(() => {
+            props.onUpdateEntry(entry.id, (current) => ({ ...current, translationStatus: "failure" }));
+          });
+      });
       return;
     }
     setTranslationMode("original");
@@ -1292,6 +1304,97 @@ function ThemePanel(props: {
   );
 }
 
+function renderSimpleMarkdown(text: string): string {
+  // 保存双语标记，避免被转义
+  const bilingualMarkers: string[] = [];
+  let html = text.replace(/<div class="bilingual-(original|translation)">([\s\S]*?)<\/div>/g, (match) => {
+    const index = bilingualMarkers.length;
+    bilingualMarkers.push(match);
+    return `__BILINGUAL_${index}__`;
+  });
+
+  // 清理文本
+  html = html
+    // 移除图片链接 ![alt](url) -> [图片]
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "[图片]")
+    // 简化链接 [text](url) -> text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    // 移除其他 HTML 标签
+    .replace(/<[^>]+>/g, "")
+    // 移除 URL 链接（单独一行的）
+    .replace(/^https?:\/\/\S+$/gm, "")
+    // Escape HTML 特殊字符
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // 代码块: ```code```
+  html = html.replace(/```[\s\S]*?```/g, (match) => {
+    const code = match.replace(/```\w*\n?/g, "").replace(/```$/g, "");
+    return `<pre><code>${code}</code></pre>`;
+  });
+
+  // Headers: ### h3, ## h2, # h1
+  html = html.replace(/^#### (.+)$/gm, "<h5>$1</h5>");
+  html = html.replace(/^### (.+)$/gm, "<h4>$1</h4>");
+  html = html.replace(/^## (.+)$/gm, "<h3>$1</h3>");
+  html = html.replace(/^# (.+)$/gm, "<h2>$1</h2>");
+
+  // Bold: **text**
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+  // Italic: *text*
+  html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
+
+  // Inline code: `code`
+  html = html.replace(/`(.+?)`/g, "<code>$1</code>");
+
+  // Blockquote: > text
+  html = html.replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>");
+
+  // Horizontal rule: --- or ***
+  html = html.replace(/^[-*]{3,}$/gm, "<hr>");
+
+  // Unordered list: - item or * item
+  html = html.replace(/^[\-\*] (.+)$/gm, "<li>$1</li>");
+
+  // Ordered list: 1. item
+  html = html.replace(/^\d+\. (.+)$/gm, "<li>$1</li>");
+
+  // 合并连续的 li 为 ul
+  html = html.replace(/((?:<li>.*<\/li>\s*)+)/g, "<ul>$1</ul>");
+
+  // 段落处理：双换行 = 新段落
+  html = html.replace(/\n\n+/g, "</p><p>");
+  // 单换行 = <br>
+  html = html.replace(/\n/g, "<br>");
+  html = "<p>" + html + "</p>";
+
+  // 清理空段落和嵌套问题
+  html = html.replace(/<p>\s*<\/p>/g, "");
+  html = html.replace(/<p>(<h[2-5]>)/g, "$1");
+  html = html.replace(/(<\/h[2-5]>)<\/p>/g, "$1");
+  html = html.replace(/<p>(<ul>)/g, "$1");
+  html = html.replace(/(<\/ul>)<\/p>/g, "$1");
+  html = html.replace(/<p>(<blockquote>)/g, "$1");
+  html = html.replace(/(<\/blockquote>)<\/p>/g, "$1");
+  html = html.replace(/<p>(<pre>)/g, "$1");
+  html = html.replace(/(<\/pre>)<\/p>/g, "$1");
+  html = html.replace(/<p>(<hr>)/g, "$1");
+  html = html.replace(/(<hr>)<\/p>/g, "$1");
+  // 清理连续的 br
+  html = html.replace(/(<br>\s*){3,}/g, "<br><br>");
+  // 清理 [图片] 周围的多余标记
+  html = html.replace(/\[图片\]/g, '<span style="color: var(--color-muted); font-style: italic;">[图片]</span>');
+
+  // 恢复双语标记
+  html = html.replace(/__BILINGUAL_(\d+)__/g, (_, index) => {
+    return bilingualMarkers[parseInt(index)];
+  });
+
+  return html;
+}
+
 function SummaryPanel(props: {
   t: (key: string, values?: Record<string, string | number>) => string;
   entry: Entry;
@@ -1374,7 +1477,7 @@ function SummaryPanel(props: {
             <span>{props.t("target")}=en</span>
             <span>{props.t("detail")}={props.t("medium")}</span>
           </div>
-          <div className="summary-content">{props.summaryError ?? (props.entry.summaryText || props.t("emptySummary"))}</div>
+          <div className="summary-content" dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(props.summaryError ?? (props.entry.summaryText || props.t("emptySummary"))) }} />
         </>
       )}
     </section>
@@ -1403,8 +1506,16 @@ function ModalHost(props: {
   if (state.modal.type === "none") {
     return null;
   }
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    // 只在点击 backdrop 本身时关闭，不包括 modal 内容
+    if (e.target === e.currentTarget) {
+      props.onClose();
+    }
+  };
+
   return (
-    <div className="modal-backdrop" role="presentation">
+    <div className="modal-backdrop" role="presentation" onClick={handleBackdropClick}>
       <div className={`modal ${state.modal.type === "settings" || state.modal.type === "usageReport" ? "wide" : ""}`} role="dialog" aria-modal="true">
         <div className="modal-header">
           <h2>{modalTitle(t, state.modal)}</h2>
@@ -1450,6 +1561,156 @@ function SettingsModal(props: {
   onModal: (modal: ModalState) => void;
 }) {
   const tabs: AppState["settingsTab"][] = ["general", "reader", "agents", "digest"];
+  const [providers, setProviders] = useState<Array<{ name: string; kind: string; model: string; base_url?: string | null; is_default: boolean; has_api_key: boolean }>>([]);
+  const [selectedProvider, setSelectedProvider] = useState<string>("");
+  const [testingProvider, setTestingProvider] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ status: string; error?: string } | null>(null);
+
+  // 编辑表单状态
+  const [isEditing, setIsEditing] = useState(false);
+  const [isNewProvider, setIsNewProvider] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    kind: "openai_compatible",
+    model: "",
+    base_url: "",
+    api_key: "",
+    api_key_header: "",
+    is_default: false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const loadProviders = async () => {
+    try {
+      const { getProviders } = await import("./services/api");
+      const data = await getProviders();
+      setProviders(data);
+      return data;
+    } catch (error) {
+      console.error("Failed to load providers:", error);
+      return [];
+    }
+  };
+
+  useEffect(() => {
+    loadProviders().then((data) => {
+      const defaultProvider = data.find((p) => p.is_default);
+      if (defaultProvider) {
+        setSelectedProvider(defaultProvider.name);
+      } else if (data.length > 0) {
+        setSelectedProvider(data[0].name);
+      }
+    });
+  }, []);
+
+  const handleSelectProvider = (name: string) => {
+    setSelectedProvider(name);
+    const provider = providers.find((p) => p.name === name);
+    if (provider) {
+      setFormData({
+        name: provider.name,
+        kind: provider.kind,
+        model: provider.model,
+        base_url: provider.base_url || "",
+        api_key: "",
+        api_key_header: "",
+        is_default: provider.is_default,
+      });
+      setIsEditing(true);
+      setIsNewProvider(false);
+    }
+  };
+
+  const handleAddNew = () => {
+    setSelectedProvider("");
+    setFormData({
+      name: "",
+      kind: "openai_compatible",
+      model: "",
+      base_url: "",
+      api_key: "",
+      api_key_header: "",
+      is_default: providers.length === 0,
+    });
+    setIsEditing(true);
+    setIsNewProvider(true);
+    setTestResult(null);
+  };
+
+  const handleSave = async () => {
+    if (!formData.name.trim()) return;
+    setSaving(true);
+    try {
+      const { createProvider, updateProvider } = await import("./services/api");
+      if (isNewProvider) {
+        await createProvider(formData);
+      } else {
+        await updateProvider(selectedProvider, formData);
+      }
+      setIsEditing(false);
+      setIsNewProvider(false);
+      const data = await loadProviders();
+      setSelectedProvider(formData.name);
+      // 如果设为默认，刷新列表
+      if (formData.is_default) {
+        await loadProviders();
+      }
+    } catch (error) {
+      console.error("Failed to save provider:", error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedProvider) return;
+    setDeleting(true);
+    try {
+      const { deleteProvider } = await import("./services/api");
+      await deleteProvider(selectedProvider);
+      setIsEditing(false);
+      setSelectedProvider("");
+      await loadProviders();
+    } catch (error) {
+      console.error("Failed to delete provider:", error);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleTestProvider = async () => {
+    if (!selectedProvider) return;
+    setTestingProvider(selectedProvider);
+    setTestResult(null);
+    try {
+      const { testProvider } = await import("./services/api");
+      const result = await testProvider(selectedProvider);
+      setTestResult(result);
+    } catch (error) {
+      setTestResult({ status: "error", error: String(error) });
+    } finally {
+      setTestingProvider(null);
+    }
+  };
+
+  const handleSetDefault = async () => {
+    if (!selectedProvider) return;
+    try {
+      const { setDefaultProvider } = await import("./services/api");
+      await setDefaultProvider(selectedProvider);
+      // 更新 formData
+      setFormData((prev) => ({ ...prev, is_default: true }));
+      await loadProviders();
+    } catch (error) {
+      console.error("Failed to set default provider:", error);
+    }
+  };
+
+  const handleFormChange = (field: string, value: string | boolean) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
   return (
     <div className="settings-layout">
       <div className="tab-list">
@@ -1495,23 +1756,138 @@ function SettingsModal(props: {
           </>
         )}
         {props.state.settingsTab === "agents" && (
-          <>
+          <div className="provider-settings">
+            {/* Provider 选择器 */}
             <SettingRow label={props.t("provider")}>
-              <select defaultValue="openai">
-                <option value="openai">OpenAI</option>
-                <option value="local">{props.t("localProvider")}</option>
-              </select>
+              <div className="provider-selector">
+                <select
+                  value={selectedProvider}
+                  onChange={(event) => handleSelectProvider(event.target.value)}
+                >
+                  {providers.length === 0 && (
+                    <option value="">{props.t("noProviders")}</option>
+                  )}
+                  {providers.map((provider) => (
+                    <option key={provider.name} value={provider.name}>
+                      {provider.name}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="add-provider-btn" onClick={handleAddNew}>
+                  {props.t("addProvider")}
+                </button>
+              </div>
             </SettingRow>
-            <SettingRow label={props.t("model")}>
-              <input defaultValue="gpt-5.2" />
-            </SettingRow>
-            <SettingRow label={props.t("availability")}>
-              <span className="status-pill success">{props.t("ready")}</span>
-            </SettingRow>
-            <SettingRow label={props.t("fallback")}>
-              <span>{"Summary -> Translation -> Tagging"}</span>
-            </SettingRow>
-          </>
+
+            {/* 编辑表单 */}
+            {isEditing && (
+              <div className="provider-form">
+                <SettingRow label={props.t("providerName")}>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(event) => handleFormChange("name", event.target.value)}
+                    disabled={!isNewProvider}
+                    placeholder="e.g., openai, deepseek, ollama"
+                  />
+                </SettingRow>
+                <SettingRow label={props.t("providerType")}>
+                  <select
+                    value={formData.kind}
+                    onChange={(event) => handleFormChange("kind", event.target.value)}
+                  >
+                    <option value="openai_compatible">OpenAI Compatible</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="ollama">Ollama (Local)</option>
+                  </select>
+                </SettingRow>
+                <SettingRow label={props.t("model")}>
+                  <input
+                    type="text"
+                    value={formData.model}
+                    onChange={(event) => handleFormChange("model", event.target.value)}
+                    placeholder="e.g., gpt-4o, claude-3-opus, llama3"
+                  />
+                </SettingRow>
+                <SettingRow label={props.t("baseUrl")}>
+                  <input
+                    type="text"
+                    value={formData.base_url}
+                    onChange={(event) => handleFormChange("base_url", event.target.value)}
+                    placeholder="e.g., https://api.openai.com/v1"
+                  />
+                </SettingRow>
+                <SettingRow label={props.t("apiKey")}>
+                  <input
+                    type="password"
+                    value={formData.api_key}
+                    onChange={(event) => handleFormChange("api_key", event.target.value)}
+                    placeholder={providers.find((p) => p.name === selectedProvider)?.has_api_key ? "(已配置)" : "sk-..."}
+                  />
+                </SettingRow>
+                <SettingRow label={props.t("apiKeyHeader")}>
+                  <input
+                    type="text"
+                    value={formData.api_key_header}
+                    onChange={(event) => {
+                      // 只允许 ASCII 字符
+                      const value = event.target.value.replace(/[^\x00-\x7F]/g, "");
+                      handleFormChange("api_key_header", value);
+                    }}
+                    placeholder="留空使用默认 Authorization: Bearer"
+                  />
+                </SettingRow>
+                <SettingRow label={props.t("defaultProvider")}>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={formData.is_default}
+                      onChange={(event) => handleFormChange("is_default", event.target.checked)}
+                    />
+                    <span>{props.t("setAsDefault")}</span>
+                  </label>
+                </SettingRow>
+                <SettingRow label={props.t("availability")}>
+                  <button
+                    type="button"
+                    disabled={testingProvider !== null || !selectedProvider}
+                    onClick={handleTestProvider}
+                  >
+                    {testingProvider === selectedProvider ? props.t("testing") : props.t("testConnection")}
+                  </button>
+                  {testResult && (
+                    <span className={`status-pill ${testResult.status === "ok" ? "success" : "error"}`}>
+                      {testResult.status === "ok" ? props.t("ready") : testResult.error ?? props.t("failed")}
+                    </span>
+                  )}
+                </SettingRow>
+                <SettingRow label={props.t("fallback")}>
+                  <span>{props.t("fallbackChain")}</span>
+                </SettingRow>
+                <div className="provider-actions">
+                  <button type="button" className="btn-secondary" onClick={handleAddNew}>
+                    {props.t("addNew")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    onClick={handleDelete}
+                    disabled={deleting || !selectedProvider}
+                  >
+                    {deleting ? props.t("deleting") : props.t("deleteProvider")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleSave}
+                    disabled={saving || !formData.name.trim()}
+                  >
+                    {saving ? props.t("saving") : props.t("saveProvider")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
         {props.state.settingsTab === "digest" && (
           <>

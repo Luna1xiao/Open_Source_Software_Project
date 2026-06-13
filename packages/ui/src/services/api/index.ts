@@ -1,17 +1,24 @@
 import {
   cleanStoredContent,
   createFeed,
+  createProvider as createProviderClient,
   deleteEntry,
+  deleteProvider as deleteProviderClient,
   generateSummary,
   getEntries,
   getEntry,
   getFeeds,
+  getProviders as getProvidersClient,
   getTags,
   importOpml,
   IpcError,
+  setDefaultProvider as setDefaultProviderClient,
   setEntryReadState,
   setEntryStarState,
-  syncAllFeeds
+  syncAllFeeds,
+  testProvider as testProviderClient,
+  translateArticle as translateArticleClient,
+  updateProvider as updateProviderClient
 } from "@mercury/ipc-client";
 import type { components } from "@mercury/shared-types";
 
@@ -73,6 +80,34 @@ export async function syncFeeds(): Promise<components["schemas"]["SyncResult"][]
 
 export async function ensureEntryContent(entryId: string): Promise<components["schemas"]["CleanContentResponse"]> {
   return cleanStoredContent(mercuryClient, entryId);
+}
+
+export async function getProviders() {
+  return getProvidersClient(mercuryClient);
+}
+
+export async function createProvider(body: { name: string; kind?: string; model?: string; base_url?: string; api_key?: string; api_key_header?: string; is_default?: boolean }) {
+  return createProviderClient(mercuryClient, body);
+}
+
+export async function updateProvider(name: string, body: { kind?: string; model?: string; base_url?: string; api_key?: string; api_key_header?: string; is_default?: boolean }) {
+  return updateProviderClient(mercuryClient, name, body);
+}
+
+export async function deleteProvider(name: string) {
+  return deleteProviderClient(mercuryClient, name);
+}
+
+export async function setDefaultProvider(name: string) {
+  return setDefaultProviderClient(mercuryClient, name);
+}
+
+export async function testProvider(name: string) {
+  return testProviderClient(mercuryClient, name);
+}
+
+export async function translateArticle(entryId: string, targetLang: string) {
+  return translateArticleClient(mercuryClient, { entry_id: entryId, target_lang: targetLang });
 }
 
 export function getApiErrorMessage(error: unknown): string {

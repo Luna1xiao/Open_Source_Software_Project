@@ -121,21 +121,24 @@ class TranslationService:
             # Build agent with selected provider
             agent = TranslationAgent(provider=provider)
 
-            # Execute translation
+            # Execute translation (bilingual mode: original + translation)
             agent_result = await agent.translate(
                 content=content,
                 target_lang=target_lang,
                 temperature=0.3,  # Lower temperature for consistency
+                bilingual=True,  # 双语对照模式
             )
 
             # Record token usage
+            from datetime import datetime, timezone
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             record_usage(
-                entry_id=entry_id,
-                agent_type="translation",
-                prompt_tokens=agent_result["usage"]["prompt_tokens"],
-                completion_tokens=agent_result["usage"]["completion_tokens"],
+                day=today,
                 provider=agent_result["provider"],
                 model=agent_result["model"],
+                agent="translation",
+                prompt_tokens=agent_result["usage"]["prompt_tokens"],
+                completion_tokens=agent_result["usage"]["completion_tokens"],
             )
 
             # Return success result
@@ -143,7 +146,7 @@ class TranslationService:
                 entry_id=entry_id,
                 target_lang=target_lang,
                 translation_html=agent_result["translated_text"],
-                status=LongTaskStatus.SUCCESS,
+                status="success",
                 provider=agent_result["provider"],
                 model=agent_result["model"],
             )
@@ -154,7 +157,7 @@ class TranslationService:
                 entry_id=entry_id,
                 target_lang=target_lang,
                 translation_html="",
-                status=LongTaskStatus.FAILURE,
+                status="failure",
                 provider=provider_name or "unknown",
                 model=model_name or "unknown",
             )
@@ -166,7 +169,7 @@ class TranslationService:
                 entry_id=entry_id,
                 target_lang=target_lang,
                 translation_html="",
-                status=LongTaskStatus.FAILURE,
+                status="failure",
                 provider=provider_name or "unknown",
                 model=model_name or "unknown",
             )
@@ -177,7 +180,7 @@ class TranslationService:
                 entry_id=entry_id,
                 target_lang=target_lang,
                 translation_html="",
-                status=LongTaskStatus.FAILURE,
+                status="failure",
                 provider=provider_name or "unknown",
                 model=model_name or "unknown",
             )
