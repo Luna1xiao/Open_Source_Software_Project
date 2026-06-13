@@ -13,7 +13,7 @@ from content_cleaner.router import router as content_cleaner_router
 from feed_engine.router import router as feed_engine_router
 
 app = FastAPI(
-    title="Mercury Backend",
+    title="Lumen Backend",
     version="0.1.0",
     lifespan=lifespan,
 )
