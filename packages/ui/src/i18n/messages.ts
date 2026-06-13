@@ -3,7 +3,7 @@ import type { LocaleCode } from "../domain/types";
 type Messages = Record<string, string>;
 
 const en: Messages = {
-  appTitle: "Mercury",
+  appTitle: "Lumen",
   searchEntries: "Search entries",
   searchScopeCurrent: "This Feed",
   searchScopeAll: "All Feeds",
@@ -139,7 +139,7 @@ const en: Messages = {
   systemFont: "System",
   serifFont: "Serif",
   monoFont: "Mono",
-  previewSentence: "Mercury reader typography preview",
+  previewSentence: "Lumen reader typography preview",
   forever: "Forever",
   localProvider: "Local",
   noProviders: "No providers configured",
@@ -166,7 +166,7 @@ const en: Messages = {
 };
 
 const zhHans: Messages = {
-  appTitle: "Mercury",
+  appTitle: "Lumen",
   searchEntries: "搜索文章",
   searchScopeCurrent: "当前订阅",
   searchScopeAll: "全部订阅",
@@ -302,7 +302,7 @@ const zhHans: Messages = {
   systemFont: "系统",
   serifFont: "衬线",
   monoFont: "等宽",
-  previewSentence: "Mercury 阅读排版预览",
+  previewSentence: "Lumen 阅读排版预览",
   forever: "永久",
   localProvider: "本地",
   noProviders: "未配置服务商",

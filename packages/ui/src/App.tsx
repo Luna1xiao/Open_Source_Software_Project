@@ -1943,7 +1943,7 @@ function SettingsModal(props: {
         {props.state.settingsTab === "digest" && (
           <>
             <SettingRow label={props.t("exportFolder")}>
-              <code>~/Documents/Mercury Digests</code>
+              <code>~/Documents/Lumen Digests</code>
             </SettingRow>
             <SettingRow label={props.t("templates")}>
               <span>{digestTemplates.map((template) => template.title).join(", ")}</span>
