@@ -9,25 +9,25 @@ def chunk_by_headings(text: str, max_chars: int = 4000) -> list[str]:
     """按标题分段，每段不超过 max_chars 字符"""
     # 按标题分割（支持 Markdown 标题）
     sections = re.split(r'(?=^#{1,3}\s)', text, flags=re.MULTILINE)
-    
+
     chunks = []
     current_chunk = ""
-    
+
     for section in sections:
         section = section.strip()
         if not section:
             continue
-            
+
         # 如果当前 chunk 加上新 section 超过限制，先保存当前 chunk
         if current_chunk and len(current_chunk) + len(section) > max_chars:
             chunks.append(current_chunk.strip())
             current_chunk = section
         else:
             current_chunk = current_chunk + "\n\n" + section if current_chunk else section
-    
+
     if current_chunk.strip():
         chunks.append(current_chunk.strip())
-    
+
     # 如果没有标题或分段太长，按段落分
     if not chunks or (len(chunks) == 1 and len(chunks[0]) > max_chars):
         paragraphs = text.split('\n\n')
@@ -44,7 +44,7 @@ def chunk_by_headings(text: str, max_chars: int = 4000) -> list[str]:
                 current_chunk = current_chunk + "\n\n" + para if current_chunk else para
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
-    
+
     return chunks if chunks else [text]
 
 
@@ -126,7 +126,7 @@ class TranslationAgent:
         """
         # 按段落分段
         paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
-        
+
         # 合并短段落，避免太碎片化
         merged_paragraphs = []
         current = ""
@@ -139,11 +139,11 @@ class TranslationAgent:
                 current = para
         if current:
             merged_paragraphs.append(current)
-        
+
         total_prompt_tokens = 0
         total_completion_tokens = 0
         bilingual_parts = []
-        
+
         for para in merged_paragraphs:
             # 检查是否是标题
             if para.startswith('#'):
@@ -155,13 +155,15 @@ class TranslationAgent:
             else:
                 # 普通段落：先原文，再翻译
                 result = await self.translate_chunk(para, target_lang, temperature)
-                bilingual_parts.append(f'<div class="bilingual-original">{para}</div>')  # 原文
-                bilingual_parts.append("")  # 空行分隔
-                bilingual_parts.append(f'<div class="bilingual-translation">{result["text"]}</div>')  # 翻译
-                bilingual_parts.append("")  # 空行分隔
+                original = f'<div class="bilingual-original">{para}</div>'
+                translation = f'<div class="bilingual-translation">{result["text"]}</div>'
+                bilingual_parts.append(original)
+                bilingual_parts.append("")
+                bilingual_parts.append(translation)
+                bilingual_parts.append("")
                 total_prompt_tokens += result["prompt_tokens"]
                 total_completion_tokens += result["completion_tokens"]
-        
+
         # 合并结果
         translated_text = "\n\n".join(bilingual_parts)
 
@@ -202,20 +204,20 @@ class TranslationAgent:
         # 如果是双语对照模式
         if bilingual:
             return await self.translate_bilingual(content, target_lang, temperature)
-        
+
         # 分段
         chunks = chunk_by_headings(content, max_chars=4000)
-        
+
         total_prompt_tokens = 0
         total_completion_tokens = 0
         translated_chunks = []
-        
-        for i, chunk in enumerate(chunks):
+
+        for chunk in chunks:
             result = await self.translate_chunk(chunk, target_lang, temperature)
             translated_chunks.append(result["text"])
             total_prompt_tokens += result["prompt_tokens"]
             total_completion_tokens += result["completion_tokens"]
-        
+
         # 合并翻译结果
         translated_text = "\n\n".join(translated_chunks)
 

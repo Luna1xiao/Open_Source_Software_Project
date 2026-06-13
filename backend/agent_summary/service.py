@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from datetime import UTC
 
 from app.schemas.agent import SummaryRequest, SummaryResult
 from db import get_article, get_article_content, record_usage, save_agent_result
-from llm_providers import ChatMessage, get_provider
+from llm_providers import get_provider
 from llm_providers.base import LLMProvider
 
 from .agent.summary_agent import SummaryAgent
@@ -53,8 +54,8 @@ class SummaryService:
         # 记录 token 用量到 usage_buckets
         usage = result.get("usage", {})
         if usage:
-            from datetime import datetime, timezone
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            from datetime import datetime
+            today = datetime.now(UTC).strftime("%Y-%m-%d")
             record_usage(
                 day=today,
                 provider=result["provider"],
@@ -122,21 +123,21 @@ def _use_mock_llm() -> bool:
         return True
     if env_mock in {"0", "false", "no", "off"}:
         return False
-    
+
     # 2. 如果环境变量有 API Key，不使用 mock
     if os.environ.get("LLM_API_KEY", "").strip():
         return False
-    
+
     # 3. 检查 providers.json 是否有配置
     try:
-        from llm_providers.config import load_providers_file, providers_path
         from app.config import settings
+        from llm_providers.config import load_providers_file, providers_path
         config = load_providers_file(providers_path(settings.data_dir))
         if config.providers:
             return False  # 有 provider 配置，不使用 mock
     except Exception:
         pass
-    
+
     # 4. 默认使用 mock
     return True
 

@@ -1,8 +1,7 @@
 """HTTP routes for LLM provider management."""
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 
 from llm_providers import (
     ProviderConfig,
@@ -108,7 +107,7 @@ async def create_provider(request: CreateProviderRequest) -> dict:
         await add_provider(config)
         return {"status": "ok", "name": request.name}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.put("/{name}")
@@ -134,8 +133,21 @@ async def update_provider_by_name(name: str, request: UpdateProviderRequest) -> 
         }
 
         # 构建更新后的配置
-        kind = kind_map.get(request.kind, existing.kind) if request.kind else existing.kind
-        api_key_header = _validate_header_value(request.api_key_header) if request.api_key_header is not None else existing.api_key_header
+        kind = (
+            kind_map.get(request.kind, existing.kind)
+            if request.kind
+            else existing.kind
+        )
+        api_key_header = (
+            _validate_header_value(request.api_key_header)
+            if request.api_key_header is not None
+            else existing.api_key_header
+        )
+        is_default = (
+            request.is_default
+            if request.is_default is not None
+            else existing.is_default
+        )
         config = ProviderConfig(
             name=name,
             kind=kind,
@@ -143,7 +155,7 @@ async def update_provider_by_name(name: str, request: UpdateProviderRequest) -> 
             base_url=request.base_url if request.base_url is not None else existing.base_url,
             api_key=SecretStr(request.api_key) if request.api_key else existing.api_key,
             api_key_header=api_key_header,
-            is_default=request.is_default if request.is_default is not None else existing.is_default,
+            is_default=is_default,
         )
 
         await update_provider(config)
@@ -151,7 +163,7 @@ async def update_provider_by_name(name: str, request: UpdateProviderRequest) -> 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/default")
@@ -173,7 +185,7 @@ async def set_default_provider(request: SetDefaultRequest) -> dict:
 
         return {"status": "ok", "default": request.name}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.delete("/{name}")
@@ -182,10 +194,13 @@ async def delete_provider(name: str) -> dict:
     try:
         await remove_provider(name)
         return {"status": "ok", "name": name}
-    except ProviderNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
+    except ProviderNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Provider '{name}' not found"
+        ) from exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/test/{name}")
@@ -202,8 +217,11 @@ async def test_provider(name: str) -> dict:
             "model": provider.model,
             "response": result.content[:50]
         }
-    except ProviderNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Provider '{name}' not found")
+    except ProviderNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Provider '{name}' not found"
+        ) from exc
     except LLMProviderError as e:
         return {"status": "error", "provider": name, "error": str(e)}
     except Exception as e:

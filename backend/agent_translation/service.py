@@ -9,9 +9,9 @@ Responsible for:
 
 import re
 from dataclasses import dataclass
+from datetime import UTC
 
 from app.schemas.agent import TranslationRequest, TranslationResult
-from app.schemas.common import LongTaskStatus
 from db import get_article, get_article_content, record_usage, save_agent_result
 from llm_providers import LLMProviderError, ProviderNotFoundError, get_provider
 
@@ -130,8 +130,8 @@ class TranslationService:
             )
 
             # Record token usage
-            from datetime import datetime, timezone
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            from datetime import datetime
+            today = datetime.now(UTC).strftime("%Y-%m-%d")
             record_usage(
                 day=today,
                 provider=agent_result["provider"],
