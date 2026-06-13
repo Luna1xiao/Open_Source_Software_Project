@@ -256,3 +256,4 @@ def _fetch_feed_sync(
             status_code=502,
             context={"url": url, "reason": str(exc)},
         ) from exc
+    
