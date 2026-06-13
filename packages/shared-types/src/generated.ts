@@ -764,35 +764,6 @@ export interface components {
             /** Unread Count */
             unread_count: number;
         };
-        /** TranslationRequest */
-        TranslationRequest: {
-            /** Entry Id */
-            entry_id: string;
-            /** Target Lang */
-            target_lang: string;
-            /** Provider */
-            provider?: string | null;
-            /** Model */
-            model?: string | null;
-        };
-        /** TranslationResult */
-        TranslationResult: {
-            /** Entry Id */
-            entry_id: string;
-            /** Target Lang */
-            target_lang: string;
-            /** Translation Html */
-            translation_html: string;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "idle" | "queued" | "running" | "success" | "failure" | "cancelled";
-            /** Provider */
-            provider: string;
-            /** Model */
-            model: string;
-        };
         /** ValidationError */
         ValidationError: {
             /** Location */

@@ -1,7 +1,5 @@
 import {
-  createProvider,
   cleanStoredContent,
-  deleteProvider,
   createFeed,
   createProvider as createProviderClient,
   deleteEntry,
@@ -24,7 +22,7 @@ import {
 } from "@mercury/ipc-client";
 import type { components } from "@mercury/shared-types";
 
-import type { Entry, Feed, ProviderDraft, ProviderSummary, Tag } from "../../domain/types";
+import type { Entry, Feed, Tag } from "../../domain/types";
 import { mercuryClient } from "./client";
 import { toUiEntry, toUiFeed, toUiTag } from "./mappers";
 
@@ -142,17 +140,4 @@ export function getApiErrorMessage(error: unknown): string {
 
 function hasDetail(value: unknown): value is { detail?: unknown } {
   return typeof value === "object" && value !== null && "detail" in value;
-}
-
-function toProviderRequest(draft: ProviderDraft): components["schemas"]["ProviderUpsertRequest"] {
-  return {
-    name: draft.name.trim(),
-    kind: draft.kind,
-    model: draft.model.trim(),
-    base_url: draft.baseUrl.trim() || null,
-    api_key: draft.apiKey.trim() || null,
-    api_key_header: draft.apiKeyHeader.trim() || null,
-    is_default: draft.isDefault,
-    clear_api_key: draft.clearApiKey
-  };
 }

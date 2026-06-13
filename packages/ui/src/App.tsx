@@ -57,12 +57,8 @@ import type {
 } from "./domain/types";
 import { translate } from "./i18n/messages";
 import {
-  createProviderConfig,
   getApiErrorMessage,
-  loadProviders,
-  removeProviderConfig,
-  requestTranslation,
-  updateProviderConfig
+  requestTranslation
 } from "./services/api";
 import { readStoredBoolean, readStoredNumber, writeStoredBoolean, writeStoredNumber } from "./services/storage";
 
@@ -982,6 +978,8 @@ function ReaderDetail(props: {
   const showWeb = state.readerMode !== "reader";
   const [translationMode, setTranslationMode] = useState<"original" | "translation">("original");
   const [noteDirty, setNoteDirty] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const showSplitTranslation = translationMode === "translation" && state.readerMode === "dual";
 
   useEffect(() => {
     setTranslationMode("original");
@@ -1037,6 +1035,7 @@ function ReaderDetail(props: {
       }
       const entryId = entry.id;
       const targetLang = state.locale === "zh-Hans" ? "中文" : "English";
+      setIsTranslating(true);
       props.onUpdateEntry(entryId, (current) => ({ ...current, translationStatus: "running" }));
       try {
         const result = await requestTranslation(entryId, targetLang);
@@ -1055,6 +1054,8 @@ function ReaderDetail(props: {
         props.onUpdateEntry(entryId, (current) => ({ ...current, translationStatus: "failure" }));
         props.onNotice(getApiErrorMessage(error));
         setTranslationMode("original");
+      } finally {
+        setIsTranslating(false);
       }
       return;
     }

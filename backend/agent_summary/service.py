@@ -80,23 +80,6 @@ class SummaryService:
             provider = ModelOverrideProvider(provider, request.model)
         return _instantiate_agent(self.agent_factory, llm_provider=provider)
 
-    def _resolve_registered_provider(self, request: SummaryRequest):
-        try:
-            if request.provider is not None:
-                config = _resolve_config_name(request.provider.strip())
-            elif load_providers_from_config():
-                config = _resolve_config_name(None)
-            else:
-                return None
-        except ProviderNotFoundError:
-            return None
-
-        if request.model:
-            config = config.model_copy(update={"model": request.model})
-
-        provider = _build_provider(config)
-        return _ProviderAdapter(provider.name, provider.model, provider)
-
     def _resolve_content(self, entry_id: str, reader_html: str) -> str:
         stored_content = get_article_content(entry_id)
         if stored_content is not None:
