@@ -7,7 +7,7 @@ from datetime import UTC
 
 from app.schemas.agent import SummaryRequest, SummaryResult
 from db import get_article, get_article_content, record_usage, save_agent_result
-from llm_providers import get_provider
+from llm_providers import ChatMessage, get_provider
 from llm_providers.base import LLMProvider
 
 from .agent.summary_agent import SummaryAgent
@@ -156,8 +156,7 @@ class _ProviderAdapter:
         self._provider = provider
 
     async def chat(self, prompt: str) -> str:
-        response = await self._provider.chat([ChatMessage(role="user", content=prompt)])
-        if isinstance(response, ChatCompletion):
-            return response.content
-        chunks = [chunk async for chunk in response]
-        return "".join(chunks)
+        messages = [ChatMessage(role="user", content=prompt)]
+        result = await self._provider.chat(messages)
+        # ChatCompletion has .content attribute
+        return result.content
