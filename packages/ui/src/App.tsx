@@ -1004,6 +1004,7 @@ function ReaderDetail(props: {
   }
 
   const articleHtml = translationMode === "translation" && entry.translationHtml ? entry.translationHtml : entry.readerHtml;
+  const webHtml = entry.webPreview.trim().startsWith("<") ? entry.webPreview : articleHtml;
 
   function toggleTranslation() {
     if (!entry) {
@@ -1134,14 +1135,16 @@ function ReaderDetail(props: {
               <button type="button" className="icon-button" onClick={() => void navigator.clipboard?.writeText(entry.url)} title={t("copyUrl")}>
                 <Copy size={15} aria-hidden />
               </button>
-              <span>{entry.webPreview}</span>
-            </div>
-            <div className="web-preview">
-              <ExternalLink size={24} aria-hidden />
-              <h3>{entry.title}</h3>
-              <p>{entry.summary}</p>
               <span>{entry.url}</span>
             </div>
+            <article
+              className={`web-preview-article theme-${state.theme.preset} font-${state.theme.fontFamily}`}
+              style={{
+                fontSize: state.theme.fontSize,
+                lineHeight: state.theme.lineHeight
+              }}
+              dangerouslySetInnerHTML={{ __html: webHtml }}
+            />
           </div>
         )}
       </div>

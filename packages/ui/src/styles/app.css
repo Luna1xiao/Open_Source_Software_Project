@@ -657,6 +657,26 @@ textarea {
   margin: 0;
 }
 
+.web-preview-article {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 20px 24px 32px;
+  overflow: auto;
+  color: var(--color-text);
+  background: var(--color-surface);
+  text-align: left;
+}
+
+.web-preview-article h1 {
+  font-size: 1.75em;
+  line-height: 1.2;
+}
+
+.web-preview-article p {
+  margin: 0 0 1em;
+}
+
 .floating-panel {
   position: absolute;
   z-index: 20;
