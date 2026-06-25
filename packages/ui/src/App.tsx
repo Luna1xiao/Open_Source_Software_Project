@@ -1105,14 +1105,23 @@ function ReaderDetail(props: {
       import("./services/api").then(({ translateArticle }) => {
         translateArticle(entry.id, detectTargetLang(entry.readerHtml))
           .then((result) => {
-            props.onUpdateEntry(entry.id, (current) => ({
-              ...current,
-              translationHtml: result.translation_html,
-              translationStatus: result.status === "success" ? "success" : "failure"
-            }));
-          })
-          .catch(() => {
+            if (result.status === "success" && result.translation_html.trim()) {
+              props.onUpdateEntry(entry.id, (current) => ({
+                ...current,
+                translationHtml: result.translation_html,
+                translationStatus: "success"
+              }));
+              return;
+            }
+
             props.onUpdateEntry(entry.id, (current) => ({ ...current, translationStatus: "failure" }));
+            props.onNotice(t("translationFailed"));
+            setTranslationMode("original");
+          })
+          .catch((error) => {
+            props.onUpdateEntry(entry.id, (current) => ({ ...current, translationStatus: "failure" }));
+            props.onNotice(getApiErrorMessage(error));
+            setTranslationMode("original");
           });
       });
       return;
@@ -2540,10 +2549,10 @@ function capitalize(value: string): string {
 // article read in an English UI still gets a Chinese translation rather than
 // a no-op "English -> English" round trip.
 function detectTargetLang(content: string): string {
-  const chineseChars = (content.match(/[一-鿿]/g) ?? []).length;
+  const chineseChars = Array.from(content.matchAll(/\p{Script=Han}/gu)).length;
   const asciiLetters = (content.match(/[A-Za-z]/g) ?? []).length;
   // Treat the text as Chinese when CJK characters clearly dominate.
-  return chineseChars > asciiLetters ? "English" : "中文";
+  return chineseChars > asciiLetters ? "English" : "Chinese";
 }
 
 function emptyProviderDraft(): ProviderDraft {

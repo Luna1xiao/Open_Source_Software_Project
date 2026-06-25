@@ -96,3 +96,23 @@ async def test_single_chunk_failure_does_not_abort_when_others_succeed() -> None
     # The article still returns; the failed chunk falls back to its original text.
     assert "translated" in result["translated_text"]
     assert result["provider"] == "fake"
+
+
+@pytest.mark.asyncio
+async def test_bilingual_translation_keeps_one_pair_per_paragraph() -> None:
+    provider = FakeProvider(["第一段译文", "第二段译文"])
+    agent = TranslationAgent(provider=provider)
+
+    result = await agent.translate(
+        "First paragraph.\n\nSecond paragraph.",
+        target_lang="Chinese",
+        bilingual=True,
+    )
+
+    assert provider.calls == 2
+    assert result["translated_text"].count('class="bilingual-original"') == 2
+    assert result["translated_text"].count('class="bilingual-translation"') == 2
+    assert '<div class="bilingual-original">First paragraph.</div>' in result["translated_text"]
+    assert '<div class="bilingual-translation">第一段译文</div>' in result["translated_text"]
+    assert '<div class="bilingual-original">Second paragraph.</div>' in result["translated_text"]
+    assert '<div class="bilingual-translation">第二段译文</div>' in result["translated_text"]
