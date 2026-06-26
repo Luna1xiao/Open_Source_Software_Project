@@ -2,6 +2,8 @@
 
 import asyncio
 import re
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 from llm_providers import (
     ChatMessage,
@@ -53,6 +55,12 @@ def chunk_by_headings(text: str, max_chars: int = 4000) -> list[str]:
             chunks.append(current_chunk.strip())
 
     return chunks if chunks else [text]
+
+
+@dataclass(slots=True)
+class BilingualSegment:
+    kind: str
+    source_text: str
 
 
 class TranslationAgent:
@@ -164,58 +172,20 @@ class TranslationAgent:
         Returns:
             Dictionary with translated_text (bilingual format) and usage
         """
-        # 按段落分段
-        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
-
-        # 合并短段落，避免太碎片化
-        merged_paragraphs = []
-        current = ""
-        for para in paragraphs:
-            if len(current) + len(para) < 500:
-                current = current + "\n\n" + para if current else para
-            else:
-                if current:
-                    merged_paragraphs.append(current)
-                current = para
-        if current:
-            merged_paragraphs.append(current)
-
         total_prompt_tokens = 0
         total_completion_tokens = 0
         bilingual_parts = []
         failed_chunks = 0
 
-        for para in merged_paragraphs:
-            # 检查是否是标题
-            if para.startswith('#'):
-                # 标题直接翻译，不保留原文；失败则退化为原标题
-                try:
-                    result = await self.translate_chunk(para, target_lang, temperature)
-                    bilingual_parts.append(result["text"])
-                    total_prompt_tokens += result["prompt_tokens"]
-                    total_completion_tokens += result["completion_tokens"]
-                except LLMProviderError:
-                    failed_chunks += 1
-                    bilingual_parts.append(para)
-            else:
-                # 普通段落：先原文，再翻译。单段失败不影响整篇，保留原文占位。
-                original = f'<div class="bilingual-original">{para}</div>'
-                try:
-                    result = await self.translate_chunk(para, target_lang, temperature)
-                    translated = result["text"]
-                    total_prompt_tokens += result["prompt_tokens"]
-                    total_completion_tokens += result["completion_tokens"]
-                except LLMProviderError:
-                    failed_chunks += 1
-                    translated = para
-                translation = f'<div class="bilingual-translation">{translated}</div>'
-                bilingual_parts.append(original)
-                bilingual_parts.append("")
-                bilingual_parts.append(translation)
-                bilingual_parts.append("")
+        async for event in self.stream_translate_bilingual(content, target_lang, temperature):
+            bilingual_parts.append(event["html"])
+            total_prompt_tokens += event["prompt_tokens"]
+            total_completion_tokens += event["completion_tokens"]
+            failed_chunks += 1 if event["failed"] else 0
 
         # 全部片段都失败时，视为整体失败，交由 service 标记 failure
-        if merged_paragraphs and failed_chunks == len(merged_paragraphs):
+        segments = self.prepare_bilingual_segments(content)
+        if segments and failed_chunks == len(segments):
             raise LLMProviderError("All translation chunks failed")
 
         # 合并结果
@@ -230,6 +200,83 @@ class TranslationAgent:
                 "completion_tokens": total_completion_tokens,
             },
         }
+
+    def prepare_bilingual_segments(self, content: str) -> list[BilingualSegment]:
+        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+
+        merged_paragraphs = []
+        current = ""
+        for para in paragraphs:
+            if len(current) + len(para) < 500:
+                current = current + "\n\n" + para if current else para
+            else:
+                if current:
+                    merged_paragraphs.append(current)
+                current = para
+        if current:
+            merged_paragraphs.append(current)
+
+        segments = []
+        for para in merged_paragraphs:
+            kind = "heading" if para.startswith('#') else "paragraph"
+            segments.append(BilingualSegment(kind=kind, source_text=para))
+        return segments
+
+    async def stream_translate_bilingual(
+        self,
+        content: str,
+        target_lang: str,
+        temperature: float = 0.3,
+    ) -> AsyncIterator[dict]:
+        segments = self.prepare_bilingual_segments(content)
+
+        for index, segment in enumerate(segments):
+            if segment.kind == "heading":
+                try:
+                    result = await self.translate_chunk(
+                        segment.source_text,
+                        target_lang,
+                        temperature,
+                    )
+                    translated = result["text"]
+                    failed = False
+                    prompt_tokens = result["prompt_tokens"]
+                    completion_tokens = result["completion_tokens"]
+                except LLMProviderError:
+                    translated = segment.source_text
+                    failed = True
+                    prompt_tokens = 0
+                    completion_tokens = 0
+                yield {
+                    "chunk_index": index,
+                    "html": translated,
+                    "failed": failed,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                }
+                continue
+
+            original = f'<div class="bilingual-original">{segment.source_text}</div>'
+            try:
+                result = await self.translate_chunk(segment.source_text, target_lang, temperature)
+                translated = result["text"]
+                failed = False
+                prompt_tokens = result["prompt_tokens"]
+                completion_tokens = result["completion_tokens"]
+            except LLMProviderError:
+                translated = segment.source_text
+                failed = True
+                prompt_tokens = 0
+                completion_tokens = 0
+
+            translation = f'<div class="bilingual-translation">{translated}</div>'
+            yield {
+                "chunk_index": index,
+                "html": f"{original}\n\n{translation}",
+                "failed": failed,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            }
 
     async def translate(
         self,

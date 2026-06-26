@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import json
 from collections.abc import Iterator
 
 import pytest
@@ -243,6 +245,63 @@ def test_generate_summary_surfaces_upstream_llm_errors(api_db: str, monkeypatch)
 
     assert response.status_code == 502
     assert response.json() == {"detail": "LLM provider rejected the request: 无效的令牌"}
+
+
+def test_stream_translation_emits_incremental_events(api_client: TestClient, monkeypatch) -> None:
+    translation_router_module = importlib.import_module("agent_translation.http.router")
+    from agent_translation.service import TranslationService
+
+    chunk_html = (
+        '<div class="bilingual-original">Hello</div>\n\n'
+        '<div class="bilingual-translation">你好</div>'
+    )
+
+    class FakeTranslationService(TranslationService):
+        async def stream_generate(self, request):
+            yield {
+                "type": "start",
+                "entry_id": request.entry_id,
+                "target_lang": request.target_lang,
+                "provider": "mock",
+                "model": "mock-model",
+            }
+            yield {
+                "type": "chunk",
+                "chunk_index": 0,
+                "delta_html": chunk_html,
+                "translation_html": chunk_html,
+                "failed": False,
+            }
+            yield {
+                "type": "complete",
+                "result": {
+                    "entry_id": request.entry_id,
+                    "target_lang": request.target_lang,
+                    "translation_html": chunk_html,
+                    "status": "success",
+                    "provider": "mock",
+                    "model": "mock-model",
+                },
+            }
+
+    monkeypatch.setattr(
+        translation_router_module,
+        "get_translation_service",
+        lambda: FakeTranslationService(),
+    )
+
+    response = api_client.post(
+        "/agents/translation/stream",
+        json={"entry_id": "article-1", "target_lang": "中文"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    body = response.text
+    assert 'event: start\ndata: {"type": "start"' in body
+    assert 'event: chunk\ndata: {"type": "chunk"' in body
+    assert json.dumps(chunk_html, ensure_ascii=False)[1:-1] in body
+    assert 'event: complete\ndata: {"type": "complete"' in body
 
 
 def _article(article_id: str, reader_html: str) -> Entry:

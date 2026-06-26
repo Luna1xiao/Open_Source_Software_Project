@@ -55,7 +55,7 @@ import type {
 import { translate } from "./i18n/messages";
 import {
   getApiErrorMessage,
-  requestTranslation
+  requestTranslationStream
 } from "./services/api";
 import { openExternalUrl } from "./services/desktop";
 import { readStoredBoolean, readStoredNumber, writeStoredBoolean, writeStoredNumber } from "./services/storage";
@@ -1052,6 +1052,49 @@ function ReaderDetail(props: {
       return;
     }
 
+    async function startStreamingTranslation(entryId: string, targetLang: string) {
+      setIsTranslating(true);
+      props.onUpdateEntry(entryId, (current) => ({
+        ...current,
+        translationStatus: "running",
+        translationHtml: ""
+      }));
+
+      try {
+        let finalStatus: string | null = null;
+        let finalHtml = "";
+        await requestTranslationStream(entryId, targetLang, {
+          onChunk: (event) => {
+            props.onUpdateEntry(entryId, (current) => ({
+              ...current,
+              translationStatus: "running",
+              translationHtml: event.translation_html
+            }));
+          },
+          onComplete: (result) => {
+            finalStatus = result.status;
+            finalHtml = result.translation_html;
+            props.onUpdateEntry(entryId, (current) => ({
+              ...current,
+              translationStatus: result.status,
+              translationHtml: result.translation_html
+            }));
+          }
+        });
+
+        if (finalStatus !== "success" || !finalHtml.trim()) {
+          props.onNotice(t("translationFailed"));
+          setTranslationMode("original");
+        }
+      } catch (error) {
+        props.onUpdateEntry(entryId, (current) => ({ ...current, translationStatus: "failure" }));
+        props.onNotice(getApiErrorMessage(error));
+        setTranslationMode("original");
+      } finally {
+        setIsTranslating(false);
+      }
+    }
+
     // Reader mode: real backend translation with side-by-side original/translation.
     if (state.readerMode === "reader") {
       if (translationMode === "translation") {
@@ -1067,54 +1110,21 @@ function ReaderDetail(props: {
       }
       const entryId = entry.id;
       const targetLang = detectTargetLang(entry.readerHtml);
-      setIsTranslating(true);
-      props.onUpdateEntry(entryId, (current) => ({ ...current, translationStatus: "running" }));
-      try {
-        const result = await requestTranslation(entryId, targetLang);
-        if (result.status === "success" && result.translation_html.trim()) {
-          props.onUpdateEntry(entryId, (current) => ({
-            ...current,
-            translationStatus: "success",
-            translationHtml: result.translation_html
-          }));
-        } else {
-          props.onUpdateEntry(entryId, (current) => ({ ...current, translationStatus: "failure" }));
-          props.onNotice(t("translationFailed"));
-          setTranslationMode("original");
-        }
-      } catch (error) {
-        props.onUpdateEntry(entryId, (current) => ({ ...current, translationStatus: "failure" }));
-        props.onNotice(getApiErrorMessage(error));
-        setTranslationMode("original");
-      } finally {
-        setIsTranslating(false);
-      }
+      await startStreamingTranslation(entryId, targetLang);
       return;
     }
 
-    // Dual mode: preserve existing mock preview behavior unchanged.
+    // Dual mode: stream translated chunks into the secondary pane as they arrive.
     if (translationMode === "original") {
       setTranslationMode("translation");
-      // 如果已有翻译，直接显示
       if (entry.translationHtml) {
         props.onUpdateEntry(entry.id, (current) => ({ ...current, translationStatus: "success" }));
         return;
       }
-      // 否则调用翻译 API
-      props.onUpdateEntry(entry.id, (current) => ({ ...current, translationStatus: "running" }));
-      import("./services/api").then(({ translateArticle }) => {
-        translateArticle(entry.id, detectTargetLang(entry.readerHtml))
-          .then((result) => {
-            props.onUpdateEntry(entry.id, (current) => ({
-              ...current,
-              translationHtml: result.translation_html,
-              translationStatus: result.status === "success" ? "success" : "failure"
-            }));
-          })
-          .catch(() => {
-            props.onUpdateEntry(entry.id, (current) => ({ ...current, translationStatus: "failure" }));
-          });
-      });
+      if (isTranslating) {
+        return;
+      }
+      await startStreamingTranslation(entry.id, detectTargetLang(entry.readerHtml));
       return;
     }
     setTranslationMode("original");
