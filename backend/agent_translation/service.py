@@ -8,6 +8,7 @@ Responsible for:
 """
 
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC
 
@@ -89,6 +90,24 @@ class TranslationService:
         save_agent_result(result)
 
         return result
+
+    async def stream_generate(self, request: TranslationRequest) -> AsyncIterator[dict]:
+        article = get_article(request.entry_id)
+        if article is None:
+            raise ArticleNotFoundError(request.entry_id)
+
+        content = self._resolve_content(request.entry_id, article.reader_html)
+        if not content:
+            raise ArticleContentUnavailableError(request.entry_id)
+
+        async for event in self._execute_translation_stream(
+            entry_id=request.entry_id,
+            target_lang=request.target_lang,
+            content=content,
+            provider_name=request.provider,
+            model_name=request.model,
+        ):
+            yield event
 
     async def _execute_translation(
         self,
@@ -184,6 +203,138 @@ class TranslationService:
                 provider=provider_name or "unknown",
                 model=model_name or "unknown",
             )
+
+    async def _execute_translation_stream(
+        self,
+        entry_id: str,
+        target_lang: str,
+        content: str,
+        provider_name: str | None,
+        model_name: str | None,
+    ) -> AsyncIterator[dict]:
+        try:
+            provider = get_provider(name=provider_name)
+            agent = TranslationAgent(provider=provider)
+            segments = agent.prepare_bilingual_segments(content)
+
+            accumulated_html = ""
+            total_prompt_tokens = 0
+            total_completion_tokens = 0
+            failed_chunks = 0
+            total_chunks = 0
+            resolved_segments: dict[int, str] = {}
+
+            yield {
+                "type": "start",
+                "entry_id": entry_id,
+                "target_lang": target_lang,
+                "provider": provider.name,
+                "model": provider.model,
+            }
+
+            async for chunk in agent.stream_translate_bilingual(
+                content=content,
+                target_lang=target_lang,
+                temperature=0.3,
+            ):
+                total_chunks += 1
+                failed_chunks += 1 if chunk["failed"] else 0
+                total_prompt_tokens += chunk["prompt_tokens"]
+                total_completion_tokens += chunk["completion_tokens"]
+                accumulated_html = (
+                    f"{accumulated_html}\n\n{chunk['html']}" if accumulated_html else chunk["html"]
+                )
+                resolved_segments[chunk["chunk_index"]] = chunk["html"]
+                yield {
+                    "type": "chunk",
+                    "chunk_index": chunk["chunk_index"],
+                    "delta_html": chunk["html"],
+                    "translation_html": self._build_stream_preview_html(
+                        segments,
+                        resolved_segments,
+                    ),
+                    "failed": chunk["failed"],
+                }
+
+            if total_chunks and failed_chunks == total_chunks:
+                raise LLMProviderError("All translation chunks failed")
+
+            from datetime import datetime
+
+            today = datetime.now(UTC).strftime("%Y-%m-%d")
+            record_usage(
+                day=today,
+                provider=provider.name,
+                model=provider.model,
+                agent="translation",
+                prompt_tokens=total_prompt_tokens,
+                completion_tokens=total_completion_tokens,
+            )
+
+            result = TranslationResult(
+                entry_id=entry_id,
+                target_lang=target_lang,
+                translation_html=accumulated_html,
+                status="success",
+                provider=provider.name,
+                model=provider.model,
+            )
+            save_agent_result(result)
+            yield {
+                "type": "complete",
+                "result": result.model_dump(),
+            }
+
+        except ProviderNotFoundError:
+            result = TranslationResult(
+                entry_id=entry_id,
+                target_lang=target_lang,
+                translation_html="",
+                status="failure",
+                provider=provider_name or "unknown",
+                model=model_name or "unknown",
+            )
+            save_agent_result(result)
+            yield {"type": "complete", "result": result.model_dump()}
+
+        except LLMProviderError:
+            result = TranslationResult(
+                entry_id=entry_id,
+                target_lang=target_lang,
+                translation_html="",
+                status="failure",
+                provider=provider_name or "unknown",
+                model=model_name or "unknown",
+            )
+            save_agent_result(result)
+            yield {"type": "complete", "result": result.model_dump()}
+
+        except Exception:
+            result = TranslationResult(
+                entry_id=entry_id,
+                target_lang=target_lang,
+                translation_html="",
+                status="failure",
+                provider=provider_name or "unknown",
+                model=model_name or "unknown",
+            )
+            save_agent_result(result)
+            yield {"type": "complete", "result": result.model_dump()}
+
+    @staticmethod
+    def _build_stream_preview_html(segments, resolved_segments: dict[int, str]) -> str:
+        parts: list[str] = []
+        for index, segment in enumerate(segments):
+            if index in resolved_segments:
+                parts.append(resolved_segments[index])
+                continue
+
+            if segment.kind == "heading":
+                parts.append(segment.source_text)
+            else:
+                parts.append(f'<div class="bilingual-original">{segment.source_text}</div>')
+
+        return "\n\n".join(parts)
 
     def _resolve_content(self, entry_id: str, reader_html: str) -> str:
         """
