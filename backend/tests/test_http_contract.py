@@ -304,6 +304,68 @@ def test_stream_translation_emits_incremental_events(api_client: TestClient, mon
     assert 'event: complete\ndata: {"type": "complete"' in body
 
 
+def test_stream_summary_emits_incremental_events(api_client: TestClient, monkeypatch) -> None:
+    summary_router_module = importlib.import_module("agent_summary.http.router")
+    from agent_summary.service import SummaryService
+
+    summary_text = "First chunk summary.\n\nSecond chunk summary."
+
+    class FakeSummaryService(SummaryService):
+        async def stream_generate(self, request):
+            yield {
+                "type": "start",
+                "entry_id": request.entry_id,
+                "provider": "mock",
+                "model": "mock-model",
+                "strategy": "hierarchical",
+            }
+            yield {
+                "type": "chunk",
+                "chunk_index": 0,
+                "delta_text": "First chunk summary.",
+                "summary_text": "First chunk summary.",
+                "phase": "chunk",
+                "failed": False,
+            }
+            yield {
+                "type": "chunk",
+                "chunk_index": 1,
+                "delta_text": "Second chunk summary.",
+                "summary_text": summary_text,
+                "phase": "chunk",
+                "failed": False,
+            }
+            yield {
+                "type": "complete",
+                "result": {
+                    "entry_id": request.entry_id,
+                    "summary_text": summary_text,
+                    "status": "success",
+                    "provider": "mock",
+                    "model": "mock-model",
+                },
+            }
+
+    monkeypatch.setattr(
+        summary_router_module,
+        "get_summary_service",
+        lambda: FakeSummaryService(),
+    )
+
+    response = api_client.post(
+        "/agents/summary/stream",
+        json={"entry_id": "article-1"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    body = response.text
+    assert 'event: start\ndata: {"type": "start"' in body
+    assert 'event: chunk\ndata: {"type": "chunk"' in body
+    assert json.dumps("First chunk summary.", ensure_ascii=False)[1:-1] in body
+    assert 'event: complete\ndata: {"type": "complete"' in body
+
+
 def _article(article_id: str, reader_html: str) -> Entry:
     return Entry(
         id=article_id,

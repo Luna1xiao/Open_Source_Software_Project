@@ -3,35 +3,43 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSummaryAction } from "./useSummaryAction";
 
-const requestSummary = vi.fn();
+const requestSummaryStream = vi.fn();
 
 vi.mock("../services/api", () => ({
   getApiErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
-  requestSummary: (...args: unknown[]) => requestSummary(...args)
+  requestSummaryStream: (...args: unknown[]) => requestSummaryStream(...args)
 }));
 
 describe("useSummaryAction", () => {
   beforeEach(() => {
-    requestSummary.mockReset();
+    requestSummaryStream.mockReset();
   });
 
-  it("runs summary generation and refreshes the entry", async () => {
-    requestSummary.mockResolvedValue({ summary_text: "Stored summary" });
+  it("streams summary chunks and refreshes the entry", async () => {
+    requestSummaryStream.mockImplementation(async (_entryId, handlers) => {
+      handlers.onChunk({ summary_text: "Partial summary" });
+      handlers.onComplete({
+        summary_text: "Stored summary",
+        status: "success"
+      });
+    });
     const refreshEntry = vi.fn().mockResolvedValue({ id: "entry-1" });
-    const { result } = renderHook(() => useSummaryAction(refreshEntry));
+    const updateEntry = vi.fn();
+    const { result } = renderHook(() => useSummaryAction(refreshEntry, updateEntry));
 
     await act(async () => {
       await result.current.runSummary("entry-1");
     });
 
-    expect(requestSummary).toHaveBeenCalledWith("entry-1");
+    expect(requestSummaryStream).toHaveBeenCalledWith("entry-1", expect.any(Object));
+    expect(updateEntry).toHaveBeenCalled();
     expect(refreshEntry).toHaveBeenCalledWith("entry-1");
     expect(result.current.status).toBe("idle");
     expect(result.current.errorMessage).toBeNull();
   });
 
   it("captures API errors without throwing", async () => {
-    requestSummary.mockRejectedValue(new Error("Entry not found"));
+    requestSummaryStream.mockRejectedValue(new Error("Entry not found"));
     const refreshEntry = vi.fn();
     const { result } = renderHook(() => useSummaryAction(refreshEntry));
 

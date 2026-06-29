@@ -267,7 +267,7 @@ export function App() {
     clearMessages: clearFeedActionMessages
   } = useFeedActions(reload);
   const { ensureCleaned } = useEntryCleaner(refreshEntry);
-  const { status: summaryStatus, errorMessage: summaryError, runSummary, clearError: clearSummaryError } = useSummaryAction(refreshEntry);
+  const { status: summaryStatus, errorMessage: summaryError, runSummary, clearError: clearSummaryError } = useSummaryAction(refreshEntry, updateEntry);
   const { setReadState, setReadStateForEntries, toggleStar, deleteOne } = useEntryActions(setData, reload);
   const [sidebarWidth, setSidebarWidth] = useState(() => readStoredNumber(sidebarWidthKey, 252));
   const [listWidth, setListWidth] = useState(() => readStoredNumber(listWidthKey, 360));
