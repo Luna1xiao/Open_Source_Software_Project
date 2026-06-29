@@ -51,4 +51,45 @@ describe("App empty state", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.getByText("Choose an OPML file to merge subscriptions into your library. Existing feeds are preserved.")).toBeTruthy();
   });
+
+  it("closes the feed add menu when clicking outside", async () => {
+    const { App } = await import("./App");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".reader-workspace")?.getAttribute("aria-busy")).toBe("false");
+    });
+
+    fireEvent.click(screen.getByTitle("Add Feed..."));
+    expect(screen.getByText("Import OPML...")).toBeTruthy();
+
+    fireEvent.mouseDown(document.body);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Import OPML...")).toBeNull();
+    });
+  });
+
+  it("keeps only one feeds menu open at a time", async () => {
+    const { App } = await import("./App");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".reader-workspace")?.getAttribute("aria-busy")).toBe("false");
+    });
+
+    fireEvent.click(screen.getByTitle("Add Feed..."));
+    expect(screen.getByText("Import OPML...")).toBeTruthy();
+
+    const feedsMenuButton = screen.getByTitle("Feeds");
+    fireEvent.mouseDown(feedsMenuButton);
+    fireEvent.click(feedsMenuButton);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Import OPML...")).toBeNull();
+    });
+    expect(screen.getByText("Sync Now")).toBeTruthy();
+  });
 });

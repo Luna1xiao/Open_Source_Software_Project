@@ -2292,9 +2292,44 @@ function MenuButton(props: {
   items: Array<{ label: string; action: () => void; disabled?: boolean; destructive?: boolean }>;
 }) {
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (rootRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
   return (
-    <div className="menu-root">
-      <button className="icon-button" type="button" onClick={() => setOpen(!open)} title={props.label}>
+    <div ref={rootRef} className="menu-root">
+      <button
+        className="icon-button"
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        title={props.label}
+      >
         {props.icon ?? <MoreHorizontal size={17} aria-hidden />}
       </button>
       {open && (
