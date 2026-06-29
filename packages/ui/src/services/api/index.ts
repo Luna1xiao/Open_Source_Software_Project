@@ -67,6 +67,100 @@ export async function requestSummary(entryId: string): Promise<components["schem
   return generateSummary(mercuryClient, { entry_id: entryId });
 }
 
+interface SummaryStreamStartEvent {
+  type: "start";
+  entry_id: string;
+  provider: string;
+  model: string;
+  strategy: string;
+}
+
+interface SummaryStreamChunkEvent {
+  type: "chunk";
+  chunk_index: number;
+  delta_text: string;
+  summary_text: string;
+  phase: string;
+  failed: boolean;
+}
+
+interface SummaryStreamCompleteEvent {
+  type: "complete";
+  result: components["schemas"]["SummaryResult"];
+}
+
+type SummaryStreamEvent =
+  | SummaryStreamStartEvent
+  | SummaryStreamChunkEvent
+  | SummaryStreamCompleteEvent;
+
+export async function requestSummaryStream(
+  entryId: string,
+  handlers: {
+    onStart?: (event: SummaryStreamStartEvent) => void;
+    onChunk: (event: SummaryStreamChunkEvent) => void;
+    onComplete: (result: components["schemas"]["SummaryResult"]) => void;
+  }
+): Promise<void> {
+  const response = await fetch(`${backendBaseUrl}/agents/summary/stream`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ entry_id: entryId })
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    const parsed = text.length > 0 ? JSON.parse(text) : undefined;
+    throw new IpcError(response.status, response.url, parsed);
+  }
+
+  if (!response.body) {
+    throw new Error("Streaming response body is unavailable");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+
+    for (const rawEvent of events) {
+      const event = parseSummarySseEvent(rawEvent);
+      if (!event) {
+        continue;
+      }
+      if (event.type === "start") {
+        handlers.onStart?.(event);
+      } else if (event.type === "chunk") {
+        handlers.onChunk(event);
+      } else if (event.type === "complete") {
+        handlers.onComplete(event.result);
+      }
+    }
+
+    if (done) {
+      if (buffer.trim()) {
+        const event = parseSummarySseEvent(buffer);
+        if (event?.type === "start") {
+          handlers.onStart?.(event);
+        } else if (event?.type === "chunk") {
+          handlers.onChunk(event);
+        } else if (event?.type === "complete") {
+          handlers.onComplete(event.result);
+        }
+      }
+      break;
+    }
+  }
+}
+
 export async function requestTranslation(
   entryId: string,
   targetLang: string
@@ -242,6 +336,14 @@ function hasDetail(value: unknown): value is { detail?: unknown } {
 }
 
 function parseSseEvent(rawEvent: string): TranslationStreamEvent | null {
+  return parseTypedSseEvent<TranslationStreamEvent>(rawEvent);
+}
+
+function parseSummarySseEvent(rawEvent: string): SummaryStreamEvent | null {
+  return parseTypedSseEvent<SummaryStreamEvent>(rawEvent);
+}
+
+function parseTypedSseEvent<T extends { type: string }>(rawEvent: string): T | null {
   const lines = rawEvent
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
@@ -261,7 +363,7 @@ function parseSseEvent(rawEvent: string): TranslationStreamEvent | null {
     return null;
   }
 
-  const parsed = JSON.parse(dataLines.join("\n")) as TranslationStreamEvent;
+  const parsed = JSON.parse(dataLines.join("\n")) as T;
   if (parsed.type !== eventType && parsed.type) {
     return parsed;
   }

@@ -1,6 +1,7 @@
 """SummaryAgent 核心实现"""
 
 import re
+from collections.abc import AsyncIterator
 from time import time
 from urllib.parse import urlparse
 
@@ -177,6 +178,171 @@ class SummaryAgent:
             "duration": result.total_duration,
             "usage": usage,
         }
+
+    async def stream_summarize(self, entry_id: str, content: str) -> AsyncIterator[dict]:
+        """流式摘要：按段推送 chunk 事件，最后推送 complete。"""
+        from ..analysis.chunker import chunk_by_headings, chunk_by_paragraphs
+        from ..analysis.prompts import SUMMARY_PROMPTS
+        from ..analysis.strategies import select_strategy
+        from ..core.config import CHUNK_MAX_CHARS
+
+        state = AgentState(entry_id=entry_id, content=content)
+
+        await self.hooks.emit("before_analyze", state)
+        state = await AnalyzeStep().execute(state, self)
+        await self.hooks.emit("after_analyze", state)
+
+        next_step = await self.router.route(state)
+        state.step_history.append(f"route:{next_step}")
+
+        if next_step == "search":
+            state = await SearchStep().execute(state, self)
+
+        strategy = select_strategy(state.profile) if state.profile else "direct"
+
+        yield {
+            "type": "start",
+            "entry_id": entry_id,
+            "provider": self.provider_name,
+            "model": self.model_name,
+            "strategy": strategy,
+        }
+
+        chunk_index = 0
+        accumulated = ""
+
+        if strategy == "hierarchical":
+            chunks = chunk_by_headings(state.content, CHUNK_MAX_CHARS)
+            chunk_summaries: list[str] = []
+            for chunk in chunks:
+                prompt = SUMMARY_PROMPTS["hierarchical"].format(content=chunk)
+                summary = await self.llm.chat(prompt)
+                chunk_summaries.append(summary)
+                accumulated = "\n\n".join(chunk_summaries)
+                yield {
+                    "type": "chunk",
+                    "chunk_index": chunk_index,
+                    "delta_text": summary,
+                    "summary_text": accumulated,
+                    "phase": "chunk",
+                    "failed": False,
+                }
+                chunk_index += 1
+
+            merge_prompt = SUMMARY_PROMPTS["merge"].format(
+                chunk_summaries="\n".join(chunk_summaries)
+            )
+            merge_text = ""
+            async for token in self._stream_llm_text(merge_prompt):
+                merge_text += token
+                yield {
+                    "type": "chunk",
+                    "chunk_index": chunk_index,
+                    "delta_text": token,
+                    "summary_text": merge_text,
+                    "phase": "merge",
+                    "failed": False,
+                }
+            state.summary = merge_text
+            chunk_index += 1
+
+        elif strategy == "single_pass":
+            chunks = chunk_by_paragraphs(state.content, CHUNK_MAX_CHARS)
+            chunk_summaries = []
+            for chunk in chunks:
+                prompt = SUMMARY_PROMPTS["hierarchical"].format(content=chunk)
+                summary = await self.llm.chat(prompt)
+                chunk_summaries.append(summary)
+                accumulated = "\n\n".join(chunk_summaries)
+                yield {
+                    "type": "chunk",
+                    "chunk_index": chunk_index,
+                    "delta_text": summary,
+                    "summary_text": accumulated,
+                    "phase": "chunk",
+                    "failed": False,
+                }
+                chunk_index += 1
+
+            merge_prompt = SUMMARY_PROMPTS["merge"].format(
+                chunk_summaries="\n".join(chunk_summaries)
+            )
+            merge_text = ""
+            async for token in self._stream_llm_text(merge_prompt):
+                merge_text += token
+                yield {
+                    "type": "chunk",
+                    "chunk_index": chunk_index,
+                    "delta_text": token,
+                    "summary_text": merge_text,
+                    "phase": "merge",
+                    "failed": False,
+                }
+            state.summary = merge_text
+            chunk_index += 1
+
+        else:
+            prompt = SUMMARY_PROMPTS["direct"].format(content=state.content)
+            direct_text = ""
+            async for token in self._stream_llm_text(prompt):
+                direct_text += token
+                yield {
+                    "type": "chunk",
+                    "chunk_index": chunk_index,
+                    "delta_text": token,
+                    "summary_text": direct_text,
+                    "phase": "direct",
+                    "failed": False,
+                }
+            state.summary = direct_text
+            chunk_index += 1
+
+        state.step_history.append(f"summarize:{strategy}")
+
+        before_eval = state.summary
+        state = await EvaluateStep().execute(state, self)
+        if state.summary != before_eval and "evaluate:retry" in state.step_history:
+            yield {
+                "type": "chunk",
+                "chunk_index": chunk_index,
+                "delta_text": state.summary or "",
+                "summary_text": state.summary or "",
+                "phase": "evaluate",
+                "failed": False,
+            }
+
+        usage = {}
+        if hasattr(self.llm, "last_usage"):
+            usage = self.llm.last_usage
+        elif "usage" in state.metadata:
+            usage = state.metadata["usage"]
+
+        yield {
+            "type": "complete",
+            "result": {
+                "entry_id": entry_id,
+                "summary_text": state.summary or "",
+                "status": "success",
+                "provider": self.provider_name,
+                "model": self.model_name,
+            },
+            "usage": usage,
+        }
+
+    async def _stream_llm_text(self, prompt: str) -> AsyncIterator[str]:
+        """优先使用 provider 的 token 流式输出，否则一次性返回。"""
+        if isinstance(self.llm, LLMProviderAdapter):
+            messages = [ChatMessage(role="user", content=prompt)]
+            result = await self.llm._provider.chat(messages, stream=True)
+            if hasattr(result, "__aiter__"):
+                async for token in result:
+                    yield token
+                return
+            yield result.content
+            return
+
+        text = await self.llm.chat(prompt)
+        yield text
 
 
 def _provider_name_from_base_url(base_url: str) -> str:

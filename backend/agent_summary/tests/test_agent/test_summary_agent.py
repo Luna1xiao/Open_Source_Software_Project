@@ -64,3 +64,13 @@ class TestSummaryAgent:
         llm = MockLLM()
         response = await llm.chat("Test prompt")
         assert response == "Test prompt"
+
+    @pytest.mark.anyio
+    async def test_stream_summarize_emits_chunk_events(self, short_article):
+        agent = SummaryAgent(use_mock=True)
+        events = [event async for event in agent.stream_summarize("test-stream", short_article)]
+
+        assert events[0]["type"] == "start"
+        assert any(event["type"] == "chunk" for event in events)
+        assert events[-1]["type"] == "complete"
+        assert events[-1]["result"]["summary_text"]

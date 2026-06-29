@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, datetime
 
 from app.schemas.agent import SummaryRequest, SummaryResult
 from db import get_article, get_article_content, record_usage, save_agent_result
 from llm_providers import ChatMessage, get_provider
-from llm_providers.base import LLMProvider
+from llm_providers.base import LLMProvider, LLMProviderError, ProviderNotFoundError
 
 from .agent.summary_agent import SummaryAgent
 
@@ -66,6 +67,101 @@ class SummaryService:
             )
 
         return summary
+
+    async def stream_generate(self, request: SummaryRequest) -> AsyncIterator[dict]:
+        article = get_article(request.entry_id)
+        if article is None:
+            raise ArticleNotFoundError(request.entry_id)
+
+        content = self._resolve_content(request.entry_id, article.reader_html)
+        if not content:
+            raise ArticleContentUnavailableError(request.entry_id)
+
+        async for event in self._execute_summary_stream(
+            entry_id=request.entry_id,
+            content=content,
+            request=request,
+        ):
+            yield event
+
+    async def _execute_summary_stream(
+        self,
+        entry_id: str,
+        content: str,
+        request: SummaryRequest,
+    ) -> AsyncIterator[dict]:
+        provider_name = request.provider
+        model_name = request.model
+
+        try:
+            agent = self._build_agent(request)
+            provider_name = agent.provider_name
+            model_name = agent.model_name
+
+            async for event in agent.stream_summarize(entry_id, content):
+                if event.get("type") != "complete":
+                    yield event
+                    continue
+
+                usage = event.get("usage", {})
+                result_payload = event["result"]
+                summary = SummaryResult(
+                    entry_id=result_payload["entry_id"],
+                    summary_text=result_payload["summary_text"],
+                    status=result_payload["status"],
+                    provider=result_payload["provider"],
+                    model=result_payload["model"],
+                )
+                save_agent_result(summary)
+
+                if usage:
+                    today = datetime.now(UTC).strftime("%Y-%m-%d")
+                    record_usage(
+                        day=today,
+                        provider=summary.provider,
+                        model=summary.model,
+                        agent="summary",
+                        prompt_tokens=usage.get("prompt_tokens", 0),
+                        completion_tokens=usage.get("completion_tokens", 0),
+                    )
+
+                yield {
+                    "type": "complete",
+                    "result": summary.model_dump(),
+                }
+
+        except ProviderNotFoundError:
+            result = SummaryResult(
+                entry_id=entry_id,
+                summary_text="",
+                status="failure",
+                provider=provider_name or "unknown",
+                model=model_name or "unknown",
+            )
+            save_agent_result(result)
+            yield {"type": "complete", "result": result.model_dump()}
+
+        except LLMProviderError:
+            result = SummaryResult(
+                entry_id=entry_id,
+                summary_text="",
+                status="failure",
+                provider=provider_name or "unknown",
+                model=model_name or "unknown",
+            )
+            save_agent_result(result)
+            yield {"type": "complete", "result": result.model_dump()}
+
+        except Exception:
+            result = SummaryResult(
+                entry_id=entry_id,
+                summary_text="",
+                status="failure",
+                provider=provider_name or "unknown",
+                model=model_name or "unknown",
+            )
+            save_agent_result(result)
+            yield {"type": "complete", "result": result.model_dump()}
 
     def _build_agent(self, request: SummaryRequest) -> SummaryAgent:
         if self.agent_factory is not SummaryAgent and not request.provider and not request.model:
