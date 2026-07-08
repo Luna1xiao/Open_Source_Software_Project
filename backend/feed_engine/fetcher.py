@@ -112,7 +112,9 @@ import ssl
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPSHandler, Request, build_opener
+
+import certifi
 
 from feed_engine.errors import FeedEngineError
 
@@ -178,10 +180,16 @@ def _fetch_feed_sync(
 
     request = Request(url, headers=headers)
 
+    if url.startswith("https://"):
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        opener = build_opener(HTTPSHandler(context=ssl_context))
+    else:
+        opener = build_opener()
+
     print("[FETCH START]", url)
 
     try:
-        with urlopen(request, timeout=timeout_seconds) as response:
+        with opener.open(request, timeout=timeout_seconds) as response:
             print("[FETCH OK]", response.status)
 
             return FetchResponse(
