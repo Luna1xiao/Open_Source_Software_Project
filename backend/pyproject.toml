@@ -66,6 +66,7 @@ dependencies = [
     "bleach>=6.2",
     "lxml>=5.3",
     "markdownify>=1.1",
+    "certifi>=2024",
 ]
 
 [dependency-groups]
