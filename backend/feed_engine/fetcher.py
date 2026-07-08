@@ -109,12 +109,12 @@ from __future__ import annotations
 
 import asyncio
 import ssl
-
-import certifi
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import HTTPSHandler, Request, build_opener, urlopen
+from urllib.request import HTTPSHandler, Request, build_opener
+
+import certifi
 
 from feed_engine.errors import FeedEngineError
 
