@@ -93,6 +93,8 @@ def build_binary(output_dir: str | None):
             "--onedir",
             "--name",
             "mercury-backend",
+            "--collect-all",
+            "certifi",
             str(SIDECAR_ENTRY),
         ],
         check=True,
