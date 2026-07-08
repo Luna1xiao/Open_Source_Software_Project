@@ -31,6 +31,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -83,6 +84,9 @@ def build_binary(output_dir: str | None):
     shutil.rmtree(DIST_DIR, ignore_errors=True)
     shutil.rmtree(BUILD_DIR, ignore_errors=True)
 
+    schema_dir = BACKEND_DIR / "db" / "schema"
+    add_data_sep = ";" if sys.platform == "win32" else ":"
+
     subprocess.run(
         [
             sys.executable,
@@ -95,6 +99,8 @@ def build_binary(output_dir: str | None):
             "mercury-backend",
             "--collect-all",
             "certifi",
+            "--add-data",
+            f"{schema_dir}{add_data_sep}db{os.sep}schema",
             str(SIDECAR_ENTRY),
         ],
         check=True,

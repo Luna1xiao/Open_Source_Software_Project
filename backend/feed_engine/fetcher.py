@@ -111,7 +111,7 @@ import asyncio
 import ssl
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import HTTPSHandler, Request, build_opener
 
 import certifi
@@ -133,7 +133,7 @@ def validate_url(url: str) -> str:
     value = url.strip()
     parts = urlsplit(value)
 
-    if parts.scheme not in {"http", "https"} or not parts.netloc:
+    if parts.scheme not in {"http", "https"} or not parts.netloc.strip():
         raise FeedEngineError(
             "INVALID_URL",
             "Feed URL must be an absolute http or https URL.",
@@ -141,7 +141,12 @@ def validate_url(url: str) -> str:
             context={"url": url},
         )
 
-    print("[VALIDATE URL]", repr(url))
+    clean_netloc = parts.netloc.strip()
+    clean_path = parts.path.strip() or "/"
+    clean_query = parts.query.strip()
+    value = urlunsplit((parts.scheme, clean_netloc, clean_path, clean_query, ""))
+
+    print("[VALIDATE URL]", repr(url), "->", repr(value))
     return value
 
 
